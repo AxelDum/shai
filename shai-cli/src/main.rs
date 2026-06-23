@@ -1,36 +1,36 @@
-use headless::app::AppHeadless;
+#![allow(clippy::module_inception)]
 use clap::{Parser, Subcommand};
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers, EventStream},
+    event::{self, Event, EventStream, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
     ExecutableCommand,
 };
+use headless::app::AppHeadless;
 
-use ringbuffer::RingBuffer;
 use console::strip_ansi_codes;
-use shai_core::agent::LoggingConfig;
-use shai_core::config::config::ShaiConfig;
-use shai_core::config::agent::AgentConfig;
-use shai_core::agent::builder::AgentBuilder;
-use shai_core::runners::clifixer::fix::clifix;
+use futures::StreamExt;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
+use ringbuffer::RingBuffer;
+use shai_core::agent::builder::AgentBuilder;
+use shai_core::agent::LoggingConfig;
+use shai_core::config::agent::AgentConfig;
+use shai_core::config::config::ShaiConfig;
+use shai_core::runners::clifixer::fix::clifix;
 use shai_llm::LlmClient;
+use std::env;
+use std::io::{self, IsTerminal, Read, Write};
+use std::process::Command;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::{interval, sleep};
 use tui::auth::AppAuth;
 use tui::theme::{apply_gradient, logo, logo_cyan, SHAI_WHITE, SHAI_YELLOW};
 use tui::App;
-use std::env;
-use std::sync::Arc;
-use std::io::{self, IsTerminal, Read, Write};
-use std::process::Command;
-use std::time::Duration;
-use tokio::time::{sleep, interval};
-use futures::StreamExt;
-use tracing_subscriber;
 
-mod headless;
 #[cfg(unix)]
 mod fc;
+mod headless;
 #[cfg(unix)]
 mod shell;
 
@@ -39,11 +39,11 @@ use fc::history::CommandHistoryExt;
 mod tui;
 
 #[cfg(unix)]
+use fc::client::ShaiSessionClient;
+#[cfg(unix)]
 use shell::pty::ShaiPtyManager;
 #[cfg(unix)]
-use shell::rc::{ShellType, get_shell};
-#[cfg(unix)]
-use fc::client::ShaiSessionClient;
+use shell::rc::{get_shell, ShellType};
 
 use crate::headless::tools::list_all_tools;
 
@@ -72,6 +72,12 @@ struct Cli {
     /// Show version information
     #[arg(short, long)]
     version: bool,
+    /// Restore a previous session by session ID
+    #[arg(long)]
+    restore: Option<String>,
+    /// Restore the most recent session automatically
+    #[arg(long)]
+    latest: bool,
     /// Auto-fix mode: if no subcommand provided, these args go to fix
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
@@ -145,7 +151,7 @@ enum Commands {
         /// Maximum number of concurrent sessions (None = unlimited)
         #[arg(long)]
         max_sessions: Option<usize>,
-    }
+    },
 }
 
 #[tokio::main]
@@ -157,34 +163,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Some(Commands::On { shell, quiet }) => {
             run_pty(shell, quiet)?;
-        },
+        }
         #[cfg(unix)]
-        Some(Commands::Off {  }) => {
+        Some(Commands::Off) => {
             kill_pty()?;
-        },
+        }
         #[cfg(unix)]
-        Some(Commands::Status {  }) => {
+        Some(Commands::Status) => {
             pty_status()?;
-        },
-        Some(Commands::Auth {  }) => {
+        }
+        Some(Commands::Auth) => {
             handle_config().await?;
-        },
+        }
         Some(Commands::Agent { action }) => {
             handle_agent_command(action).await?;
-        },
+        }
         #[cfg(unix)]
         Some(Commands::Precmd { command }) => {
             let command_str = command.join(" ");
             handle_precmd(command_str)?;
-        },
+        }
         #[cfg(unix)]
         Some(Commands::Postcmd { exit_code, command }) => {
             let command_str = command.join(" ");
             handle_postcmd(exit_code, command_str).await?;
-        },
-        Some(Commands::Serve { host, port, agent, ephemeral, max_sessions }) => {
+        }
+        Some(Commands::Serve {
+            host,
+            port,
+            agent,
+            ephemeral,
+            max_sessions,
+        }) => {
             handle_serve(host, port, agent, ephemeral, max_sessions).await?;
-        },
+        }
         None => {
             // Check for stdin input or trailing arguments
             let stdin_input = if !io::stdin().is_terminal() {
@@ -196,17 +208,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut messages = Vec::new();
-            
+
             // Add stdin content as first message if present
             if let Some(stdin_content) = stdin_input {
                 messages.push(stdin_content);
             }
-            
+
             // Add arguments as second message if present
             if !cli.args.is_empty() {
                 messages.push(cli.args.join(" "));
             }
-            
+
             // Handle --list-tools flag
             if cli.list_tools {
                 list_all_tools();
@@ -224,7 +236,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 handle_fix(messages, cli.tools, cli.remove, cli.trace, None).await?;
             } else {
                 // No input, show TUI
-                handle_main(None).await?;
+                let restore_id = if cli.latest {
+                    match shai_core::session::SessionPersist::list_sessions() {
+                        Ok(sessions) if !sessions.is_empty() => {
+                            Some(sessions[0].session_id.clone())
+                        }
+                        _ => {
+                            eprintln!("No previous session found.");
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    cli.restore.clone()
+                };
+                handle_main(None, restore_id).await?;
             }
         }
     }
@@ -239,11 +264,15 @@ async fn default_config(default_config_url: Option<String>) {
 
     let default_url = match default_config_url {
         Some(url) => url,
-        None => "https://raw.githubusercontent.com/ovh/shai/refs/heads/main/.shai.config".to_string()
+        None => {
+            "https://raw.githubusercontent.com/ovh/shai/refs/heads/main/.shai.config".to_string()
+        }
     };
 
     let config = if let Ok(parsed_url) = default_url.parse() {
-        ShaiConfig::pull_from_url(parsed_url).await.unwrap_or_else(|_| ShaiConfig::default())
+        ShaiConfig::pull_from_url(parsed_url)
+            .await
+            .unwrap_or_else(|_| ShaiConfig::default())
     } else {
         ShaiConfig::default()
     };
@@ -251,13 +280,15 @@ async fn default_config(default_config_url: Option<String>) {
     let _ = config.save();
 }
 
-async fn handle_main(agent_name: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_main(
+    agent_name: Option<String>,
+    restore_session_id: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let logo = logo();
     println!("{}", apply_gradient(&logo, SHAI_YELLOW, SHAI_YELLOW));
     let mut app = App::new();
-    match app.run(agent_name).await {
-        Err(e) => eprintln!("error: {}",e),
-        _ => {}
+    if let Err(e) = app.run(agent_name, restore_session_id).await {
+        eprintln!("error: {}", e)
     }
     Ok(())
 }
@@ -273,25 +304,32 @@ async fn ensure_config() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn handle_fix(
-    prompt: Vec<String>, 
-    tools: Option<String>, 
+    prompt: Vec<String>,
+    tools: Option<String>,
     remove: Option<String>,
     trace: bool,
-    agent_name: Option<String>
+    agent_name: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let initial_trace: Vec<ChatMessage> = prompt.into_iter()
-        .map(|p| ChatMessage::User { 
-            content: ChatMessageContent::Text(p), 
-            name: None 
+    let initial_trace: Vec<ChatMessage> = prompt
+        .into_iter()
+        .map(|p| ChatMessage::User {
+            content: ChatMessageContent::Text(p),
+            name: None,
         })
         .collect();
-    
-    AppHeadless::new().run(initial_trace, tools, remove, trace, agent_name).await
+
+    AppHeadless::new()
+        .run(initial_trace, tools, remove, trace, agent_name)
+        .await
 }
 
 fn show_version() -> Result<(), Box<dyn std::error::Error>> {
-    println!("{} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-    return Ok(());
+    println!(
+        "{} version {}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -307,7 +345,6 @@ fn run_pty(shell: Option<ShellType>, quiet: bool) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-
 #[cfg(unix)]
 fn kill_pty() -> Result<(), Box<dyn std::error::Error>> {
     if env::var("SHAI_SESSION_ID").is_err() {
@@ -322,7 +359,6 @@ fn kill_pty() -> Result<(), Box<dyn std::error::Error>> {
     std::process::exit(0);
 }
 
-
 #[cfg(unix)]
 fn pty_status() -> Result<(), Box<dyn std::error::Error>> {
     if env::var("SHAI_SESSION_ID").is_ok() {
@@ -335,60 +371,67 @@ fn pty_status() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(unix)]
 pub fn handle_precmd(command: String) -> Result<(), Box<dyn std::error::Error>> {
-    env::var("SHAI_SESSION_ID").ok()
-        .and_then(|session_id| {
-            let client = ShaiSessionClient::new(&session_id);
-            client.session_exists().then(|| client.pre_command(&command))
-        });
+    env::var("SHAI_SESSION_ID").ok().and_then(|session_id| {
+        let client = ShaiSessionClient::new(&session_id);
+        client
+            .session_exists()
+            .then(|| client.pre_command(&command))
+    });
     Ok(())
 }
 
 #[cfg(unix)]
-pub async fn handle_postcmd(exit_code: i32, command: String) -> Result<(), Box<dyn std::error::Error>> {
-    env::var("SHAI_SESSION_ID").ok()
-        .and_then(|session_id| {
-            let client = ShaiSessionClient::new(&session_id);
-            client.session_exists().then(|| client.post_command( exit_code, &command))
-        });
+pub async fn handle_postcmd(
+    exit_code: i32,
+    command: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    env::var("SHAI_SESSION_ID").ok().and_then(|session_id| {
+        let client = ShaiSessionClient::new(&session_id);
+        client
+            .session_exists()
+            .then(|| client.post_command(exit_code, &command))
+    });
 
     match exit_code {
         0 => {
             return Ok(());
-        },
+        }
         code if code >= 128 => {
             return Ok(());
-        },
+        }
         _ => {
-            let last_terminal_output = env::var("SHAI_SESSION_ID").ok()
-                .and_then(|session_id| {
-                    let client = ShaiSessionClient::new(&session_id);
-                    client.session_exists().then(|| client.get_last_commands(50).unwrap_or_else(|_| vec![].into()))
-                });
+            let last_terminal_output = env::var("SHAI_SESSION_ID").ok().and_then(|session_id| {
+                let client = ShaiSessionClient::new(&session_id);
+                client.session_exists().then(|| {
+                    client
+                        .get_last_commands(50)
+                        .unwrap_or_else(|_| vec![].into())
+                })
+            });
 
             if let Some(cmd) = last_terminal_output {
-                let trace = vec![ChatMessage::User { 
-                    content: ChatMessageContent::Text(cmd.export_as_text()), 
-                    name: None 
+                let trace = vec![ChatMessage::User {
+                    content: ChatMessageContent::Text(cmd.export_as_text()),
+                    name: None,
                 }];
-            
+
                 let (llm, model) = ShaiConfig::get_llm().await?;
-                
+
                 enable_raw_mode().unwrap();
                 let mut events = EventStream::new();
                 let mut ticker = interval(Duration::from_millis(100));
                 let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
                 let mut spinner_index = 0;
-                
-                let mut clifix_task = tokio::spawn(async move {
-                    clifix(Arc::new(llm), model, trace).await
-                });
-                
+
+                let mut clifix_task =
+                    tokio::spawn(async move { clifix(Arc::new(llm), model, trace).await });
+
                 let result = loop {
                     tokio::select! {
                         result = &mut clifix_task => {
                             break result.unwrap();
                         }
-                        
+
                         maybe_event = events.next() => {
                             if let Some(Ok(Event::Key(KeyEvent { code: KeyCode::Esc, .. }))) = maybe_event {
                                 clifix_task.abort();
@@ -397,7 +440,7 @@ pub async fn handle_postcmd(exit_code: i32, command: String) -> Result<(), Box<d
                                 return Ok(());
                             }
                         }
-                        
+
                         _ = ticker.tick() => {
                             eprint!("\r\x1b[2mAnalyzing command... {} (Press ESC to cancel)\x1b[0m", spinner_chars[spinner_index]);
                             io::stdout().flush().unwrap();
@@ -405,72 +448,80 @@ pub async fn handle_postcmd(exit_code: i32, command: String) -> Result<(), Box<d
                         }
                     }
                 };
-                
+
                 disable_raw_mode().unwrap();
                 eprint!("\r\x1b[2K");
-                
-                match result {
-                    Ok(res) => {
-                        if let Some(rational) = &res.short_rational {
-                            eprintln!("\n\x1b[2m{}\x1b[0m\n", rational);
-                        }
-                        eprint!("\x1b[38;5;206m❯\x1b[0m \x1b[1m{}\x1b[0m\n", &res.fixed_cli);
-                        eprintln!("\n\x1b[2m ↵ Run • Esc / Ctrl+C Cancel\x1b[0m");
-                        
-                        io::stdout().execute(cursor::MoveUp(3)).unwrap();
-                        io::stdout().execute(cursor::MoveToColumn((res.fixed_cli.len() + 3) as u16)).unwrap();
-                        io::stdout().flush().unwrap();
-                        enable_raw_mode().unwrap();
-                        
-                        loop {
-                            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
-                                match (code, modifiers) {
-                                    (KeyCode::Enter, _) => {
-                                        disable_raw_mode().unwrap();
-                                        io::stdout().execute(cursor::MoveDown(3)).unwrap();
-                                        io::stdout().execute(cursor::MoveToColumn(0)).unwrap();
-                                        println!();
-                                        
-                                        let mut cmd = Command::new("sh");
-                                        cmd.arg("-c").arg(&res.fixed_cli);
-                                        cmd.envs(env::vars());
-                                        
-                                        match cmd.status() {
-                                            Ok(status) => {
-                                                if status.success() {
-                                                    shell::rc::write_to_shell_history(&res.fixed_cli);
-                                                }
+
+                if let Ok(res) = result {
+                    if let Some(rational) = &res.short_rational {
+                        eprintln!("\n\x1b[2m{}\x1b[0m\n", rational);
+                    }
+                    eprintln!("\x1b[38;5;206m❯\x1b[0m \x1b[1m{}\x1b[0m", &res.fixed_cli);
+                    eprintln!("\n\x1b[2m ↵ Run • Esc / Ctrl+C Cancel\x1b[0m");
+
+                    io::stdout().execute(cursor::MoveUp(3)).unwrap();
+                    io::stdout()
+                        .execute(cursor::MoveToColumn((res.fixed_cli.len() + 3) as u16))
+                        .unwrap();
+                    io::stdout().flush().unwrap();
+                    enable_raw_mode().unwrap();
+
+                    loop {
+                        if let Ok(Event::Key(KeyEvent {
+                            code, modifiers, ..
+                        })) = event::read()
+                        {
+                            match (code, modifiers) {
+                                (KeyCode::Enter, _) => {
+                                    disable_raw_mode().unwrap();
+                                    io::stdout().execute(cursor::MoveDown(3)).unwrap();
+                                    io::stdout().execute(cursor::MoveToColumn(0)).unwrap();
+                                    println!();
+
+                                    let mut cmd = Command::new("sh");
+                                    cmd.arg("-c").arg(&res.fixed_cli);
+                                    cmd.envs(env::vars());
+
+                                    match cmd.status() {
+                                        Ok(status) => {
+                                            if status.success() {
+                                                shell::rc::write_to_shell_history(&res.fixed_cli);
                                             }
-                                            Err(e) => eprintln!("Failed to execute command: {}\n", e),
                                         }
-                                        break;
+                                        Err(e) => eprintln!("Failed to execute command: {}\n", e),
                                     }
-                                    (KeyCode::Esc, _) => {
-                                        disable_raw_mode().unwrap();
-                                        println!();
-                                        break;
-                                    }
-                                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                                        disable_raw_mode().unwrap();
-                                        println!();
-                                        eprintln!("Exiting...");
-                                        std::process::exit(0);
-                                    }
-                                    _ => {}
+                                    break;
                                 }
+                                (KeyCode::Esc, _) => {
+                                    disable_raw_mode().unwrap();
+                                    println!();
+                                    break;
+                                }
+                                (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                                    disable_raw_mode().unwrap();
+                                    println!();
+                                    eprintln!("Exiting...");
+                                    std::process::exit(0);
+                                }
+                                _ => {}
                             }
                         }
-                    },
-                    _ => {}
+                    }
                 }
-            }  
+            }
         }
     }
-    
+
     Ok(())
 }
 
-async fn handle_serve(host: String, port: u16, agent: Option<String>, ephemeral: bool, max_sessions: Option<usize>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_serve(
+    host: String,
+    port: u16,
+    agent: Option<String>,
+    ephemeral: bool,
+    max_sessions: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing for HTTP server logs
     tracing_subscriber::fmt()
         .with_target(false)
@@ -499,21 +550,23 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
                 println!("Create agent configs in ~/.config/shai/agents/");
             } else {
                 println!("Available agents:");
-                
+
                 // Find the longest agent name for alignment
                 let max_name_len = agents.iter().map(|name| name.len()).max().unwrap_or(0);
-                
+
                 for agent in agents {
                     match AgentConfig::load(&agent) {
                         Ok(config) => {
-                            println!("  \x1b[1m{:<width$}\x1b[0m \x1b[2m{}\x1b[0m", 
-                                agent, 
+                            println!(
+                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m{}\x1b[0m",
+                                agent,
                                 config.description,
                                 width = max_name_len
                             );
                         }
                         Err(_) => {
-                            println!("  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error)\x1b[0m", 
+                            println!(
+                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error)\x1b[0m",
                                 agent,
                                 width = max_name_len
                             );
@@ -528,13 +581,13 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
                 eprintln!("Usage: shai agent <agent_name> [prompt]");
                 return Ok(());
             }
-            
+
             let agent_name = &args[0];
             let prompt_args: Vec<String> = args.iter().skip(1).cloned().collect();
-            
+
             if prompt_args.is_empty() {
                 // No prompt provided, start TUI mode with the agent
-                handle_main(Some(agent_name.clone())).await?;
+                handle_main(Some(agent_name.clone()), None).await?;
             } else {
                 // Prompt provided, run in headless mode
                 let prompt = prompt_args.join(" ");
@@ -544,4 +597,3 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
     }
     Ok(())
 }
-

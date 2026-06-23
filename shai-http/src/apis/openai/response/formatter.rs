@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use openai_dive::v1::resources::response::{
     items::{FunctionToolCall, InputItemStatus},
     request::ResponseParameters,
@@ -8,7 +9,6 @@ use openai_dive::v1::resources::response::{
     },
 };
 use openai_dive::v1::resources::shared::Usage;
-use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use shai_core::agent::AgentEvent;
 use uuid::Uuid;
 
@@ -93,19 +93,12 @@ impl ResponseFormatter {
 impl EventFormatter for ResponseFormatter {
     type Output = ResponseStreamEvent;
 
-    async fn format_event(
-        &mut self,
-        event: AgentEvent,
-        session_id: &str,
-    ) -> Option<Self::Output> {
+    async fn format_event(&mut self, event: AgentEvent, session_id: &str) -> Option<Self::Output> {
         // Send initial event on first call
         if !self.initial_event_sent {
             self.initial_event_sent = true;
-            let initial_response = self.build_response_object(
-                session_id,
-                ReasoningStatus::InProgress,
-                vec![],
-            );
+            let initial_response =
+                self.build_response_object(session_id, ReasoningStatus::InProgress, vec![]);
             let evt = ResponseStreamEvent::created(self.sequence, initial_response);
             self.sequence += 1;
             return Some(evt);
@@ -145,7 +138,11 @@ impl EventFormatter for ResponseFormatter {
                 let output_index = self.output.len();
                 self.output.push(tool_output.clone());
 
-                let event = ResponseStreamEvent::output_item_added(self.sequence, output_index, tool_output);
+                let event = ResponseStreamEvent::output_item_added(
+                    self.sequence,
+                    output_index,
+                    tool_output,
+                );
                 self.sequence += 1;
 
                 Some(event)
@@ -155,12 +152,8 @@ impl EventFormatter for ResponseFormatter {
                 use shai_core::tools::ToolResult;
 
                 let tool_status = match &result {
-                    ToolResult::Success { .. } => {
-                        InputItemStatus::Completed
-                    }
-                    _ => {
-                        InputItemStatus::Incomplete
-                    }
+                    ToolResult::Success { .. } => InputItemStatus::Completed,
+                    _ => InputItemStatus::Incomplete,
                 };
 
                 if let Some(idx) = self.output.iter().position(|o| {
@@ -178,7 +171,11 @@ impl EventFormatter for ResponseFormatter {
                         status: tool_status,
                     });
 
-                    let event = ResponseStreamEvent::output_item_done(self.sequence, idx, self.output[idx].clone());
+                    let event = ResponseStreamEvent::output_item_done(
+                        self.sequence,
+                        idx,
+                        self.output[idx].clone(),
+                    );
                     self.sequence += 1;
 
                     return Some(event);
@@ -187,7 +184,9 @@ impl EventFormatter for ResponseFormatter {
                 None
             }
 
-            AgentEvent::Completed { message, success, .. } => {
+            AgentEvent::Completed {
+                message, success, ..
+            } => {
                 if !message.is_empty() {
                     self.accumulated_text = message;
                 }
@@ -209,11 +208,8 @@ impl EventFormatter for ResponseFormatter {
                     ReasoningStatus::Failed
                 };
 
-                let final_response = self.build_response_object(
-                    session_id,
-                    final_status,
-                    self.output.clone(),
-                );
+                let final_response =
+                    self.build_response_object(session_id, final_status, self.output.clone());
 
                 let event = ResponseStreamEvent::completed(self.sequence, final_response);
 
@@ -222,7 +218,7 @@ impl EventFormatter for ResponseFormatter {
 
             AgentEvent::StatusChanged { new_status, .. } => {
                 use shai_core::agent::PublicAgentState;
-                if matches!(new_status, PublicAgentState::Paused { .. }) {
+                if matches!(new_status, PublicAgentState::Paused) {
                     let msg_output = ResponseOutput::Message(OutputMessage {
                         id: Uuid::new_v4().to_string(),
                         role: Role::Assistant,

@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Metadata extracted from a SKILL.md file's frontmatter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +81,8 @@ fn discover_skills_in_dir(dir: &Path) -> Vec<SkillInfo> {
             Some(parsed) => parsed,
             None => {
                 // Fall back to directory name if no frontmatter
-                let dir_name = path.file_name()
+                let dir_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown")
                     .to_string();
@@ -120,7 +121,10 @@ pub fn discover_skills() -> Vec<SkillInfo> {
     // Global skills
     let home = std::env::var("HOME").ok();
     if let Some(home) = home {
-        let global_skills_dir = PathBuf::from(home).join(".config").join("shai").join("skills");
+        let global_skills_dir = PathBuf::from(home)
+            .join(".config")
+            .join("shai")
+            .join("skills");
         for skill in discover_skills_in_dir(&global_skills_dir) {
             if !seen_names.contains(&skill.name) {
                 seen_names.insert(skill.name.clone());
@@ -148,7 +152,9 @@ pub fn format_skill_catalog(skills: &[SkillInfo]) -> String {
             lines.push(format!("- **{}**: {}", skill.name, skill.description));
         }
     }
-    lines.push("\nUse the `skill` tool with a skill name to load its full instructions.".to_string());
+    lines.push(
+        "\nUse the `skill` tool with a skill name to load its full instructions.".to_string(),
+    );
     lines.join("\n")
 }
 
@@ -185,7 +191,8 @@ Some content here.
 
     #[test]
     fn test_parse_skill_frontmatter_quoted_values() {
-        let content = "---\nname: \"quoted-name\"\ndescription: \"A quoted description\"\n---\n# Body";
+        let content =
+            "---\nname: \"quoted-name\"\ndescription: \"A quoted description\"\n---\n# Body";
         let result = parse_skill_frontmatter(content);
         assert!(result.is_some());
         let (name, desc) = result.unwrap();
@@ -228,7 +235,7 @@ Some content here.
         let skill_dir = temp_path.join("my-skill");
         fs::create_dir(&skill_dir).unwrap();
         fs::write(
-            &skill_dir.join("SKILL.md"),
+            skill_dir.join("SKILL.md"),
             "---\nname: my-skill\ndescription: A test skill\n---\n# My Skill\n",
         )
         .unwrap();
@@ -236,8 +243,11 @@ Some content here.
         // Create another skill without frontmatter
         let skill_dir2 = temp_path.join("another-skill");
         fs::create_dir(&skill_dir2).unwrap();
-        fs::write(&skill_dir2.join("SKILL.md"), "# Another Skill\n\nNo frontmatter.")
-            .unwrap();
+        fs::write(
+            skill_dir2.join("SKILL.md"),
+            "# Another Skill\n\nNo frontmatter.",
+        )
+        .unwrap();
 
         // Create a non-skill directory (no SKILL.md)
         let non_skill_dir = temp_path.join("not-a-skill");

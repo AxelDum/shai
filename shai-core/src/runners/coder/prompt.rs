@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::fs;
+use std::sync::Arc;
 
 use crate::tools::{AnyTool, ToolResult};
 
@@ -64,9 +64,7 @@ static CODER_PROMPT: &str = r#"{{CODER_GUIDELINE}}
 /// Load AGENTS.md from the git root (or CWD if not in a git repo).
 /// Returns empty string if not found or on error.
 fn load_agents_content() -> String {
-    let base = find_git_root().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_default()
-    });
+    let base = find_git_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let agents_path = base.join("AGENTS.md");
     match fs::read_to_string(&agents_path) {
         Ok(content) => content,
@@ -82,14 +80,14 @@ fn load_agents_content() -> String {
 /// Load SHAI.md from the git root (or CWD if not in a git repo).
 /// Returns empty string if not found or on error.
 fn load_shai_content() -> String {
-    let base = find_git_root().unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_default()
-    });
+    let base = find_git_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let shai_path = base.join("SHAI.md");
     match fs::read_to_string(&shai_path) {
         Ok(content) => {
             if !content.is_empty() {
-                eprintln!("\x1b[2m⚠ SHAI.md is deprecated, please consider migrating to AGENTS.md\x1b[0m");
+                eprintln!(
+                    "\x1b[2m⚠ SHAI.md is deprecated, please consider migrating to AGENTS.md\x1b[0m"
+                );
             }
             content
         }
@@ -123,7 +121,7 @@ pub fn render_system_prompt_template(template: &str) -> String {
     }
 
     let mut result = template.to_string();
-    
+
     // Only gather environment info if needed
     if result.contains("{{TODAY}}") {
         result = result.replace("{{TODAY}}", &get_today());
@@ -162,12 +160,15 @@ pub fn render_system_prompt_template(template: &str) -> String {
         let git_repo = is_git_repo();
         let mut coder_base_prompt = CODER_PROMPT
             .replace("{{CODER_GUIDELINE}}", CODER_GUIDELINE)
-            .replace("{{CODER_ENV}}", &CODER_ENV
-                .replace("{{TODAY}}", &get_today())
-                .replace("{{PLATFORM}}", &get_platform())
-                .replace("{{OS_VERSION}}", &get_os_version())
-                .replace("{{WORKING_DIR}}", &get_working_dir())
-                .replace("{{IS_GIT_REPO}}", &git_repo.to_string()));
+            .replace(
+                "{{CODER_ENV}}",
+                &CODER_ENV
+                    .replace("{{TODAY}}", &get_today())
+                    .replace("{{PLATFORM}}", &get_platform())
+                    .replace("{{OS_VERSION}}", &get_os_version())
+                    .replace("{{WORKING_DIR}}", &get_working_dir())
+                    .replace("{{IS_GIT_REPO}}", &git_repo.to_string()),
+            );
 
         if git_repo {
             let git_info = CODER_PROMPT_GIT
@@ -216,7 +217,10 @@ pub fn render_system_prompt_template(template: &str) -> String {
     }
 
     // Only get git info if individual git placeholders are used
-    if result.contains("{{GIT_BRANCH}}") || result.contains("{{GIT_STATUS}}") || result.contains("{{GIT_LOG}}") {
+    if result.contains("{{GIT_BRANCH}}")
+        || result.contains("{{GIT_STATUS}}")
+        || result.contains("{{GIT_LOG}}")
+    {
         if is_git_repo() {
             if result.contains("{{GIT_BRANCH}}") {
                 result = result.replace("{{GIT_BRANCH}}", &get_git_branch());
@@ -242,7 +246,6 @@ pub fn coder_next_step() -> String {
     render_system_prompt_template("{{CODER_BASE_PROMPT}}")
 }
 
-
 static TODO_STATUS: &str = r#"
 <todo>
 todoStatus: This is the current status of the todo list
@@ -254,14 +257,13 @@ todoStatus: This is the current status of the todo list
 pub async fn get_todo_read(todo_tool: &Arc<dyn AnyTool>) -> String {
     let todo = todo_tool.execute_json(serde_json::json!({}), None).await;
     if let ToolResult::Success { output, metadata } = todo {
-        TODO_STATUS.to_string()
-        .replace("{{TODO_LIST}}", &output)
+        TODO_STATUS.to_string().replace("{{TODO_LIST}}", &output)
     } else {
-        TODO_STATUS.to_string()
-        .replace("{{TODO_LIST}}", "the todo list is empty..")
+        TODO_STATUS
+            .to_string()
+            .replace("{{TODO_LIST}}", "the todo list is empty..")
     }
 }
-
 
 static CODER_CHECK_GOAL: &str = r#"
 You are an interactive CLI tool called that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user. 
@@ -278,7 +280,6 @@ Though achieving user's objective is the principal objective, it may happen that
 
 If you reply is NO, then you must explain to yourself why upon further investigation you think you can do more in this round.
 "#;
-
 
 pub fn coder_check_goal() -> String {
     CODER_CHECK_GOAL.to_string()

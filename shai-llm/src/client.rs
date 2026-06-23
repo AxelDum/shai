@@ -2,15 +2,11 @@ use crate::tool::ToolBox;
 use crate::ToolCallMethod;
 
 // llm/client.rs
-use super::provider::{LlmProvider, LlmError, LlmStream, ProviderInfo};
+use super::provider::{LlmError, LlmProvider, LlmStream, ProviderInfo};
 use super::providers::{
-    openai::OpenAIProvider,
-    openai_compatible::OpenAICompatibleProvider,
-    openrouter::OpenRouterProvider,
-    ovhcloud::OvhCloudProvider,
-    anthropic::AnthropicProvider,
-    ollama::OllamaProvider,
-    mistral::MistralProvider
+    anthropic::AnthropicProvider, mistral::MistralProvider, ollama::OllamaProvider,
+    openai::OpenAIProvider, openai_compatible::OpenAICompatibleProvider,
+    openrouter::OpenRouterProvider, ovhcloud::OvhCloudProvider,
 };
 use openai_dive::v1::resources::chat::ChatCompletionParametersBuilder;
 use openai_dive::v1::resources::{
@@ -18,6 +14,10 @@ use openai_dive::v1::resources::{
     model::ListModelResponse,
 };
 use regex::Regex;
+use std::sync::LazyLock;
+
+static THINK_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
 
 #[derive(Debug)]
 pub struct LlmClient {
@@ -124,7 +124,6 @@ impl LlmClient {
         }
     }
 
-
     /// Get all available LLM clients from environment variables
     /// Returns clients in order of preference for testing
     pub fn first_from_env() -> Option<Self> {
@@ -140,7 +139,7 @@ impl LlmClient {
                 _ => {} // Fall through to default behavior
             }
         }
-        
+
         if let Some(client) = Self::from_env_ovhcloud() {
             return Some(client);
         }
@@ -179,62 +178,64 @@ impl LlmClient {
     }
 
     /// Helper function to get a value from config or fall back to environment variable
-    fn get_or_env(env_values: &std::collections::HashMap<String, String>, key: &str) -> Option<String> {
-        env_values.get(key).cloned().or_else(|| {
-            std::env::var(key).ok().map(|val| {
-                //eprintln!("\x1b[2m[llm] Using {} from environment variable\x1b[0m", key);
-                val
-            })
-        })
+    fn get_or_env(
+        env_values: &std::collections::HashMap<String, String>,
+        key: &str,
+    ) -> Option<String> {
+        env_values
+            .get(key)
+            .cloned()
+            .or_else(|| std::env::var(key).ok())
     }
 
     /// Create a provider dynamically based on name and environment values
     /// Falls back to actual environment variables if not found in config
-    pub fn create_provider(provider_name: &str, env_values: &std::collections::HashMap<String, String>) -> Result<Self, LlmError> {
+    pub fn create_provider(
+        provider_name: &str,
+        env_values: &std::collections::HashMap<String, String>,
+    ) -> Result<Self, LlmError> {
         match provider_name {
             "openai" => {
                 let api_key = Self::get_or_env(env_values, "OPENAI_API_KEY")
                     .ok_or("OPENAI_API_KEY not found in config or environment")?;
                 Ok(Self::openai(api_key))
-            },
+            }
             "anthropic" => {
                 let api_key = Self::get_or_env(env_values, "ANTHROPIC_API_KEY")
                     .ok_or("ANTHROPIC_API_KEY not found in config or environment")?;
                 Ok(Self::anthropic(api_key))
-            },
+            }
             "ollama" => {
                 let base_url = Self::get_or_env(env_values, "OLLAMA_BASE_URL")
                     .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
                 Ok(Self::ollama(base_url))
-            },
+            }
             "mistral" => {
                 let api_key = Self::get_or_env(env_values, "MISTRAL_API_KEY")
                     .ok_or("MISTRAL_API_KEY not found in config or environment")?;
                 Ok(Self::mistral(api_key))
-            },
+            }
             "ovhcloud" => {
-                let api_key = Self::get_or_env(env_values, "OVH_API_KEY")
-                    .unwrap_or_else(|| String::new());
+                let api_key = Self::get_or_env(env_values, "OVH_API_KEY").unwrap_or_default();
                 let base_url = Self::get_or_env(env_values, "OVH_BASE_URL");
                 Ok(Self::ovhcloud(api_key, base_url))
-            },
+            }
             "openrouter" => {
                 let api_key = Self::get_or_env(env_values, "OPENROUTER_API_KEY")
                     .ok_or("OPENROUTER_API_KEY not found in config or environment")?;
                 Ok(Self::openrouter(api_key))
-            },
+            }
             "openai_compatible" => {
                 let api_key = Self::get_or_env(env_values, "OPENAI_COMPATIBLE_API_KEY")
                     .ok_or("OPENAI_COMPATIBLE_API_KEY not found in config or environment")?;
                 let base_url = Self::get_or_env(env_values, "OPENAI_COMPATIBLE_BASE_URL")
                     .ok_or("OPENAI_COMPATIBLE_BASE_URL not found in config or environment")?;
                 Ok(Self::compatible(api_key, base_url))
-            },
-            _ => Err(format!("Unknown provider: {}", provider_name).into())
+            }
+            _ => Err(format!("Unknown provider: {}", provider_name).into()),
         }
     }
 }
-
 
 /// Provider Delegate
 impl LlmClient {
@@ -262,29 +263,98 @@ impl LlmClient {
 
 /// Higher level chat client
 impl LlmClient {
-    pub async fn chat(&self, request: ChatCompletionParameters) -> Result<ChatCompletionResponse, LlmError> {
-        let request = request
-            .fix_mistral_alternating();
+    /// Default maximum number of retry attempts for transient errors.
+    const DEFAULT_MAX_RETRIES: usize = 3;
+    /// Base delay in milliseconds for exponential backoff.
+    const RETRY_BASE_DELAY_MS: u64 = 1000;
 
-        let response = self.provider
-            .chat(request.clone())
-            .await
-            .inspect_err(|error| {
-                crate::logging::log_llm_error(&request, error, self.provider_name());
-            })?
-            .extract_think_content();
-
-        Ok(response)
+    /// Returns true if the error is likely transient and worth retrying.
+    /// Since all LLM errors are potentially transient (server overload, network
+    /// issues, malformed responses), we retry on any error.
+    fn is_retryable_error(_error: &LlmError) -> bool {
+        true
     }
 
-    pub async fn chat_stream(&self, request: ChatCompletionParameters) -> Result<LlmStream, LlmError> {
-        let request = request
-            .fix_mistral_alternating();
+    pub async fn chat(
+        &self,
+        request: ChatCompletionParameters,
+    ) -> Result<ChatCompletionResponse, LlmError> {
+        let request = request.fix_mistral_alternating();
 
-        self.provider.chat_stream(request).await
+        let max_retries = Self::max_retries_from_env();
+        let mut last_error: Option<LlmError> = None;
+
+        for attempt in 0..=max_retries {
+            match self.provider.chat(request.clone()).await {
+                Ok(response) => return Ok(response.extract_think_content()),
+                Err(error) => {
+                    crate::logging::log_llm_error(&request, &error, self.provider_name());
+
+                    if attempt < max_retries && Self::is_retryable_error(&error) {
+                        let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
+                        eprintln!(
+                            "[shai] LLM request failed (attempt {}/{}), retrying in {}ms: {}",
+                            attempt + 1,
+                            max_retries,
+                            delay_ms,
+                            error
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                        last_error = Some(error);
+                        continue;
+                    }
+
+                    return Err(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "unknown error".into()))
     }
 
+    pub async fn chat_stream(
+        &self,
+        request: ChatCompletionParameters,
+    ) -> Result<LlmStream, LlmError> {
+        let request = request.fix_mistral_alternating();
 
+        let max_retries = Self::max_retries_from_env();
+        let mut last_error: Option<LlmError> = None;
+
+        for attempt in 0..=max_retries {
+            match self.provider.chat_stream(request.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => {
+                    if attempt < max_retries && Self::is_retryable_error(&error) {
+                        let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
+                        eprintln!(
+                            "[shai] LLM stream request failed (attempt {}/{}), retrying in {}ms: {}",
+                            attempt + 1,
+                            max_retries,
+                            delay_ms,
+                            error
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                        last_error = Some(error);
+                        continue;
+                    }
+
+                    return Err(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "unknown error".into()))
+    }
+
+    /// Read the max retries override from the `SHAI_LLM_MAX_RETRIES` env var.
+    /// Falls back to [`DEFAULT_MAX_RETRIES`].
+    fn max_retries_from_env() -> usize {
+        std::env::var("SHAI_LLM_MAX_RETRIES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(Self::DEFAULT_MAX_RETRIES)
+    }
 }
 
 pub trait ExtractThinkContent {
@@ -295,13 +365,24 @@ pub trait ExtractThinkContent {
 impl ExtractThinkContent for ChatCompletionResponse {
     fn extract_think_content(mut self) -> ChatCompletionResponse {
         for choice in &mut self.choices {
-            if let ChatMessage::Assistant { reasoning_content, content, .. } = &mut choice.message {
+            if let ChatMessage::Assistant {
+                reasoning_content,
+                content,
+                ..
+            } = &mut choice.message
+            {
                 if let Some(ChatMessageContent::Text(content_text)) = content {
-                    let think_regex = Regex::new(r"(?s)<think>(.*?)</think>").unwrap();
-                    if let Some(reasoning) = think_regex.captures(content_text).map(|c| c.get(1).unwrap().as_str().trim()) {
+                    if let Some(reasoning) = THINK_REGEX
+                        .captures(content_text)
+                        .map(|c| c.get(1).unwrap().as_str().trim())
+                    {
                         *reasoning_content = Some(reasoning.to_string());
-                        let cleaned = think_regex.replace_all(content_text, "").trim().to_string();
-                        *content = if cleaned.is_empty() { None } else { Some(ChatMessageContent::Text(cleaned)) };
+                        let cleaned = THINK_REGEX.replace_all(content_text, "").trim().to_string();
+                        *content = if cleaned.is_empty() {
+                            None
+                        } else {
+                            Some(ChatMessageContent::Text(cleaned))
+                        };
                     }
                 }
             }
@@ -311,14 +392,14 @@ impl ExtractThinkContent for ChatCompletionResponse {
 }
 
 pub trait FixMistralAlternating {
-    /// Mistral enforces alternating of user/assistant which is problematic in multiturn 
+    /// Mistral enforces alternating of user/assistant which is problematic in multiturn
     /// conversation where assistant or toolcall can be cancelled by the user...
     fn fix_mistral_alternating(self) -> ChatCompletionParameters;
 }
 
 impl FixMistralAlternating for ChatCompletionParameters {
     fn fix_mistral_alternating(self) -> ChatCompletionParameters {
-        if !self.model.to_lowercase().contains("mistral")  {
+        if !self.model.to_lowercase().contains("mistral") {
             return self;
         }
 
@@ -328,23 +409,35 @@ impl FixMistralAlternating for ChatCompletionParameters {
             match &res.messages[i] {
                 ChatMessage::User { .. } => {
                     if pos % 2 != 0 {
-                        res.messages.insert(i, ChatMessage::Assistant {
-                            content: Some(ChatMessageContent::Text("I understand.".to_string())),
-                            reasoning_content: None, tool_calls: None, refusal: None, name: None, audio: None,
-                        });
+                        res.messages.insert(
+                            i,
+                            ChatMessage::Assistant {
+                                content: Some(ChatMessageContent::Text(
+                                    "I understand.".to_string(),
+                                )),
+                                reasoning_content: None,
+                                tool_calls: None,
+                                refusal: None,
+                                name: None,
+                                audio: None,
+                            },
+                        );
                     }
                     pos += 1;
                 }
-                ChatMessage::Assistant { tool_calls, .. } => {
-                    if tool_calls.as_ref().map_or(true, |calls| calls.is_empty()) {
-                        if pos % 2 == 0 {
-                            res.messages.insert(i, ChatMessage::User {
+                ChatMessage::Assistant { tool_calls, .. }
+                    if tool_calls.as_ref().is_none_or(|calls| calls.is_empty()) =>
+                {
+                    if pos % 2 == 0 {
+                        res.messages.insert(
+                            i,
+                            ChatMessage::User {
                                 content: ChatMessageContent::Text("Go ahead.".to_string()),
-                                name: None, 
-                            });
-                        }
-                        pos += 1;
+                                name: None,
+                            },
+                        );
                     }
+                    pos += 1;
                 }
                 _ => {}
             }

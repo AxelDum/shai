@@ -60,6 +60,12 @@ impl ConversationHistory {
         self.scroll_offset = 0;
     }
 
+    /// Clear all history lines
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.scroll_offset = 0;
+    }
+
     /// Check if scrolled to bottom
     pub fn at_bottom(&self) -> bool {
         self.scroll_offset == 0

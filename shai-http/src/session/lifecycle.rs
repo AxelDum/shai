@@ -3,7 +3,7 @@ use tokio::sync::OwnedMutexGuard;
 use tracing::{info, warn};
 
 use crate::session::logger::colored_session_id;
-use crate::session::persist::SessionPersist;
+use shai_core::session::SessionPersist;
 
 
 pub enum RequestLifecycle {

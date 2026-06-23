@@ -34,7 +34,7 @@ impl HelpArea {
     pub fn draw(&self, f: &mut Frame, area: Rect) {
         let helper_text = self.helper_msg();
         let x = helper_text.into_text().unwrap();
-        let x = x.style(Style::default().fg(Color::DarkGray).dim());
+        let x = x.style(Style::default().fg(Color::White));
         f.render_widget(
             x, 
             area

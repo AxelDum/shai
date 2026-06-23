@@ -5,6 +5,8 @@ use std::time::Instant;
 use chrono::Utc;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::terminal::{self, disable_raw_mode};
+use crossterm::execute;
+use std::io::Write;
 use futures::{future::FutureExt, StreamExt};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
@@ -90,11 +92,17 @@ pub struct App<'a> {
 // Agent-related Internals
 impl App<'_> {
     pub async fn start_agent(&mut self, agent_name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        // When the terminal is already initialized (e.g. during /restore), skip the
+        // println! banner since writing directly to stdout corrupts the inline viewport.
+        let suppress_banner = self.terminal.is_some();
+        
         let mut agent: Box<dyn Agent> = if let Some(agent_name) = agent_name {
             // Load custom agent config
             let config = AgentConfig::load(agent_name)?;
             
-            println!("\x1b[2m░ agent {} - {} on {}\x1b[0m", agent_name, config.llm_provider.model, config.llm_provider.provider);
+            if !suppress_banner {
+                println!("\x1b[2m░ agent {} - {} on {}\x1b[0m", agent_name, config.llm_provider.model, config.llm_provider.provider);
+            }
             
             // Store agent metadata for status bar
             self.agent_model = config.llm_provider.model.clone();
@@ -106,7 +114,10 @@ impl App<'_> {
         } else {
             // Use default coder agent
             let (llm, model) = ShaiConfig::get_llm().await?;
-            println!("\x1b[2m░ {} on {}\x1b[0m", model, llm.provider().name());
+            
+            if !suppress_banner {
+                println!("\x1b[2m░ {} on {}\x1b[0m", model, llm.provider().name());
+            }
             
             // Store agent metadata for status bar
             self.agent_model = model.clone();
@@ -132,6 +143,11 @@ impl App<'_> {
             controller,
             events
         });
+
+        // Update status bar with agent metadata
+        self.status_bar.set_model(&self.agent_model);
+        self.status_bar.set_provider(&self.agent_provider);
+
         Ok(())
     }
 
@@ -143,10 +159,54 @@ impl App<'_> {
         }
     }
 
+    /// Render a restored trace into the TUI terminal and conversation history.
+    /// This is used by /restore to display the loaded conversation.
+    pub(crate) fn render_restored_trace(&mut self, trace: &[openai_dive::v1::resources::chat::ChatMessage]) {
+        use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
+
+        for message in trace {
+            let formatted = match message {
+                ChatMessage::User { content, .. } => {
+                    match content {
+                        ChatMessageContent::Text(text) => {
+                            self.formatter.format_event(&AgentEvent::UserInput { input: text.clone() })
+                        }
+                        _ => None,
+                    }
+                }
+                ChatMessage::Assistant { content, .. } => {
+                    if let Some(ChatMessageContent::Text(text)) = content {
+                        if text.trim().is_empty() {
+                            None
+                        } else {
+                            Some(format!("\n● {}", text))
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(text) = formatted {
+                if let Some(ref mut terminal) = self.terminal {
+                    let wrapped = text.into_text().unwrap();
+                    let line_count = wrapped.lines.len() as u16;
+                    terminal.clear().ok();
+                    terminal.insert_before(line_count, |buf| {
+                        wrapped.render(buf.area, buf);
+                    }).ok();
+                    self.history.add_text(&text);
+                }
+            }
+        }
+    }
+
     async fn handle_agent_event(&mut self, event: AgentEvent) -> io::Result<()> {
         // Update agent state
         if let AgentEvent::StatusChanged { new_status, .. } = &event {
             self.input.set_agent_running(!matches!(new_status, PublicAgentState::Paused));
+            self.status_bar.set_agent_state(&format!("{:?}", new_status).to_lowercase());
 
             // Save session to disk when agent pauses (finishes processing)
             if matches!(new_status, PublicAgentState::Paused) {
@@ -251,6 +311,13 @@ impl App<'_> {
 
     pub async fn run(&mut self, agent_name: Option<String>) -> io::Result<()> {
         let x = self.try_run(agent_name).await;
+
+        // Restore keyboard protocol
+        let _ = execute!(
+            std::io::stdout(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        );
+        std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
 
         if let Err(e) = x {
@@ -279,6 +346,8 @@ impl App<'_> {
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
             viewport: Viewport::Inline(8)
         }));
+
+        std::io::stdout().flush().ok();
 
         // Create a timer for animation updates
         let mut animation_timer = interval(Duration::from_millis(100));
@@ -461,21 +530,23 @@ impl App<'_> {
         
         let running_tools_height = self.running_tools.len() as u16;
         let height = modal_height
-        + 1 
-        + running_tools_height;
+        + 1
+        + running_tools_height
+        + 1; // status bar
 
-        if let Some(ref mut terminal) = self.terminal {  
+        if let Some(ref mut terminal) = self.terminal {
             if height != self.terminal_height {
                 terminal.set_viewport_height(height + 1)?;
                 self.terminal_height = height;
             }
 
-            terminal.draw(|frame| {                    
-                let [_, inprogress, modal] = Layout::vertical([
-                    Constraint::Length(1), // padding
-                    Constraint::Length(running_tools_height + 1), // running tool (if any)
-                    Constraint::Length(modal_height)])                // input or modal
-                    .areas(frame.area()); 
+            terminal.draw(|frame| {
+                let [_, inprogress, modal, statusbar] = Layout::vertical([
+                    Constraint::Length(1),                          // padding
+                    Constraint::Length(running_tools_height + 1),  // running tool (if any)
+                    Constraint::Length(modal_height),               // input or modal
+                    Constraint::Length(1),                           // status bar
+                ]).areas(frame.area());
 
                 // draw running tool with duration
                 if !self.running_tools.is_empty() {
@@ -501,6 +572,9 @@ impl App<'_> {
                         widget.draw(frame, modal)
                     }
                 }
+
+                // draw status bar
+                self.status_bar.draw(frame, statusbar);
             })?;
         }
         Ok(())

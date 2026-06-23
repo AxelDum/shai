@@ -1,9 +1,9 @@
 use std::fs;
 
-use crate::tools::types::ToolResult;
 use crate::tools::tool;
-use serde::{Deserialize, Serialize};
+use crate::tools::types::ToolResult;
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use super::discovery::discover_skills;
 
@@ -69,6 +69,12 @@ impl SkillTool {
                 ))
             }
         }
+    }
+}
+
+impl Default for SkillTool {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -53,10 +53,7 @@ impl App<'_> {
                 Vec::<String>::new(),
             ),
             (
-                (
-                    "/skills".to_string(),
-                    "list available skills".to_string(),
-                ),
+                ("/skills".to_string(), "list available skills".to_string()),
                 Vec::<String>::new(),
             ),
         ])
@@ -287,8 +284,7 @@ impl App<'_> {
 
                         // Load the trace into the agent (without starting to think)
                         if let Some(ref agent) = self.agent {
-                            let _ =
-                                agent.controller.load_trace(session.trace.clone()).await;
+                            let _ = agent.controller.load_trace(session.trace.clone()).await;
                         }
 
                         // Render the trace into the TUI

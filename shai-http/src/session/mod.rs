@@ -1,10 +1,10 @@
 mod lifecycle;
-mod session;
-mod manager;
 mod logger;
+mod manager;
+mod session;
 
-pub use logger::log_event;
 pub use lifecycle::RequestLifecycle;
-pub use session::{AgentSession, RequestSession};
+pub use logger::log_event;
 pub use manager::{SessionManager, SessionManagerConfig};
-pub use shai_core::session::{SessionPersist, SessionData};
+pub use session::{AgentSession, RequestSession};
+pub use shai_core::session::{SessionData, SessionPersist};

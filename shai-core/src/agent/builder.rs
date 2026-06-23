@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::tools::mcp::mcp_oauth::signin_oauth;
 use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
 use crate::tools::memory::{MemoryWriteTool, MemoryReadTool};
+use crate::tools::skills::SkillTool;
 use crate::config::agent::AgentConfig;
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
@@ -85,6 +86,7 @@ impl AgentBuilder {
             Box::new(WriteTool::new(fs_log)),
             Box::new(MemoryWriteTool::new()),
             Box::new(MemoryReadTool::new()),
+            Box::new(SkillTool::new()),
         ]
     }
 }
@@ -199,7 +201,7 @@ impl AgentBuilder {
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
             // Add all builtin tools
-            vec!["bash", "edit", "multiedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write", "memory_write", "memory_read"]
+            vec!["bash", "edit", "multiedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write", "memory_write", "memory_read", "skill"]
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()
@@ -224,6 +226,7 @@ impl AgentBuilder {
                 "write" => tools.push(Box::new(WriteTool::new(fs_log.clone()))),
                 "memory_write" => tools.push(Box::new(MemoryWriteTool::new())),
                 "memory_read" => tools.push(Box::new(MemoryReadTool::new())),
+                "skill" => tools.push(Box::new(SkillTool::new())),
                 _ => return Err(AgentError::ConfigurationError(format!("Unknown builtin tool: {}", tool_name))),
             }
         }

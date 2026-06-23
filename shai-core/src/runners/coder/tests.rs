@@ -10,6 +10,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use std::sync::Once;
 
+use super::prompt::render_system_prompt_template;
+
 static INIT_LOGGING: Once = Once::new();
 fn init_test_logging() {
     INIT_LOGGING.call_once(|| {
@@ -247,5 +249,37 @@ if __name__ == "__main__":
     assert!(fixed_content.contains("def main"), "Main function should still exist");
     
     // Cleanup is automatic when TempDir is dropped
+}
+
+#[tokio::test]
+async fn test_render_system_prompt_no_placeholders() {
+    let result = render_system_prompt_template("hello world");
+    assert_eq!(result, "hello world");
+}
+
+#[tokio::test]
+async fn test_render_system_prompt_shai_prompt_placeholder() {
+    // This test verifies that {{SHAI_PROMPT}} is replaced (or removed if no file exists)
+    let result = render_system_prompt_template("{{SHAI_PROMPT}}");
+    // Should not contain the literal placeholder
+    assert!(!result.contains("{{SHAI_PROMPT}}"));
+}
+
+#[tokio::test]
+async fn test_render_system_prompt_coder_base_prompt() {
+    // Test that CODER_BASE_PROMPT expands correctly
+    let result = render_system_prompt_template("{{CODER_BASE_PROMPT}}");
+    // Should contain the guideline text
+    assert!(result.contains("SHAI") || result.contains("coding assistant"));
+    // Should contain environment info
+    assert!(result.contains("Working directory") || result.contains("WORKING_DIR"));
+}
+
+#[tokio::test]
+async fn test_render_system_prompt_env_placeholders() {
+    let result = render_system_prompt_template("{{TODAY}} {{PLATFORM}} {{OS_VERSION}}");
+    // Should not contain any placeholders
+    assert!(!result.contains("{{"));
+    assert!(!result.contains("}}"));
 }
 

@@ -10,8 +10,9 @@ shai is a coding agent, your pair programming buddy that lives in the terminal. 
 - **Headless mode** - Pipe prompts directly into shai for scripting and automation
 - **HTTP server** - Run shai as a service with OpenAI-compatible APIs and SSE streaming
 - **Shell assistant** - Automatically suggests fixes when commands fail in your terminal
-- **Project context** - Load project-specific information via `SHAI.md` files
+- **Project context** - Load project-specific information via `AGENTS.md` files (with `SHAI.md` legacy support)
 - **MCP Support** - Configure specialized agents with MCP and OAuth support
+- **Skills** - Extend shai with composable, on-demand procedural instructions
 - **Multiple LLM providers** - Works with OVHCloud, OpenAI, and other compatible endpoints
 
 ## Installation
@@ -129,7 +130,16 @@ shai off
 
 ### Project Context File
 
-You can create a `SHAI.md` file at the root of your project containing any information you want Shai to know about the project (architecture, build steps, important directories, etc.). Shai will automatically load this file as additional context.
+Shai supports the [AGENTS.md](https://agents.md/) convention — a standard markdown file at the root of your project containing build steps, code style guidelines, testing instructions, and other context for AI coding agents.
+
+Shai loads context from two files (in priority order):
+
+1. **`AGENTS.md`** — the canonical project context file (recommended).
+2. **`SHAI.md`** — legacy override/supplement (deprecated, use `AGENTS.md` instead).
+
+Both files are loaded automatically if present at the git root. `AGENTS.md` is displayed first, followed by `SHAI.md` as an override.
+
+For nested projects in a monorepo, place an `AGENTS.md` in each subdirectory — the closest one to the edited file takes precedence.
 
 ### Custom Agents (with MCP)
 
@@ -156,6 +166,44 @@ OVHCloud provides compatible LLM endpoints for using shai with tools. Start by c
 
 - choose [one of the models with function calling feature](https://endpoints.ai.cloud.ovh.net/catalog) (e.g., [gpt-oss-120b](https://endpoints.ai.cloud.ovh.net/models/gpt-oss-120b), [gpt-oss-20b](https://endpoints.ai.cloud.ovh.net/models/gpt-oss-20b), [Mistral-​Small-​3.2-​24B-​Instruct-​2506](https://endpoints.ai.cloud.ovh.net/models/mistral-small-3-2-24b-instruct-2506)) for best performance ;
 - choose any other model forcing structured output (`/set so` option).
+
+## Skills
+
+Shai supports **skills** — composable, on-demand procedural instructions that extend its capabilities. Skills are loaded progressively: only their name and description are injected into the system prompt, and the full instructions are fetched when the model decides they're relevant.
+
+### Creating a Skill
+
+Create a directory under `.shai/skills/` with a `SKILL.md` file:
+
+```
+.shai/skills/
+└── my-skill/
+    └── SKILL.md
+```
+
+A `SKILL.md` file contains YAML frontmatter and markdown body:
+
+```markdown
+---
+name: my-skill
+description: A short description shown in the skill catalog
+---
+
+# My Skill
+
+Detailed instructions for the model to follow when this skill is loaded.
+```
+
+### Skill Locations
+
+| Location | Scope |
+|----------|-------|
+| `.shai/skills/` | Project-local (higher priority) |
+| `~/.config/shai/skills/` | Global (user-wide) |
+
+Project-local skills shadow global skills with the same name.
+
+See [`docs/skills.md`](./docs/skills.md) for the full documentation.
 
 ## Development
 

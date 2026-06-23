@@ -122,7 +122,7 @@ fn default_max_tokens() -> u32 {
 }
 
 fn default_temperature() -> f32 {
-    0.3
+    0.0
 }
 
 fn default_enabled_tools() -> Vec<String> {

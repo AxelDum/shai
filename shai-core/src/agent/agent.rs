@@ -64,6 +64,7 @@ pub struct AgentCore {
     /// big brain
     pub brain: Arc<RwLock<Box<dyn Brain>>>,
     pub method: ToolCallMethod,
+    pub temperature: Arc<RwLock<f32>>,
 
     /// agent state (manipulated by main looper + brain/tool coroutines)
     pub trace:           Arc<RwLock<Vec<ChatMessage>>>,
@@ -113,6 +114,7 @@ impl AgentCore {
             },
             brain: Arc::new(RwLock::new(brain)),
             method: ToolCallMethod::FunctionCall,
+            temperature: Arc::new(RwLock::new(0.0)),
             trace: Arc::new(RwLock::new(trace)),
             available_tools: available_tools.into_iter().map(|t| Arc::from(t) as Arc<dyn AnyTool>).collect(),
             permissions: Arc::new(RwLock::new(permissions)),
@@ -416,6 +418,10 @@ impl AgentCore {
                     self.method = method;   
                 }
                 Ok(AgentResponse::Method { method: self.method })
+            }
+            AgentRequest::SetTemperature { temperature } => {
+                *self.temperature.write().await = temperature;
+                Ok(AgentResponse::Temperature { temperature })
             }
             AgentRequest::SendUserInput{ input } => {
                 self.handle_event(InternalAgentEvent::CancelTask).await

@@ -20,13 +20,19 @@ pub enum AgentKind {
 
 pub struct AppHeadless {
     kind: AgentKind,
+    temperature: Option<f32>,
 }
 
 impl AppHeadless {
     pub fn new() -> Self {
         Self {
             kind: AgentKind::Coder,
+            temperature: None,
         }
+    }
+
+    pub fn set_temperature(&mut self, temperature: f32) {
+        self.temperature = Some(temperature);
     }
 
     pub async fn run(
@@ -109,6 +115,10 @@ impl AppHeadless {
                     .build()
             }
         };
+
+        if let Some(temp) = self.temperature {
+            *agent.temperature.write().await = temp;
+        }
 
         let result = agent
             .with_event_handler(StdoutEventManager::new())

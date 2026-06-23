@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: OVH SAS
+
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
@@ -139,5 +142,43 @@ impl SessionPersist {
                 Err(e) => error!("Failed to delete session file {:?}: {}", file_path, e),
             }
         }
+    }
+
+    /// List all saved sessions IDs from disk
+    pub fn list_sessions() -> Result<Vec<SessionData>, PersistError> {
+        if !Self::is_enabled() {
+            return Err(io::Error::new(
+                ErrorKind::Other,
+                "Session persistence is not enabled",
+            )
+            .into());
+        }
+
+        let folder = Self::folder();
+        if !folder.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut sessions = Vec::new();
+        for entry in fs::read_dir(&folder)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json") {
+                match fs::read_to_string(&path) {
+                    Ok(content) => {
+                        if let Ok(session_data) = serde_json::from_str::<SessionData>(&content) {
+                            sessions.push(session_data);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to read session file {:?}: {}", path, e);
+                    }
+                }
+            }
+        }
+
+        // Sort by updated_at descending (most recent first)
+        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(sessions)
     }
 }

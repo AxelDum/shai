@@ -34,6 +34,20 @@ cargo clippy
 cargo fmt
 ```
 
+### Package names
+
+The workspace crates have different package names than their directory names:
+
+| Directory       | Package name   |
+| --------------- | -------------- |
+| `shai-cli/`    | `shai`         |
+| `shai-core/`   | `shai-core`    |
+| `shai-llm/`    | `shai-llm`     |
+| `shai-http/`   | `shai-http`    |
+| `shai-macros/` | `shai-macros`  |
+
+When using `-p` with cargo commands, always use the package name (e.g., `cargo build -p shai`), not the directory name.
+
 ## Code Style
 
 - Follow Rust idioms: `cargo fmt` and `cargo clippy` must pass.

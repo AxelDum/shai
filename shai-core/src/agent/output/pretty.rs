@@ -217,7 +217,14 @@ impl PrettyFormatter {
                             let mut markdown_content = String::new();
                             markdown_content.push_str("\n");
                             for line in preview_lines {
-                                markdown_content.push_str(&format!("      {}\n", line));
+                                // Diff visualization: color added lines green, removed lines red
+                                if line.starts_with("+") && !line.starts_with("++") {
+                                    markdown_content.push_str(&format!("      \x1b[32m{}\x1b[0m\n", line));
+                                } else if line.starts_with("-") && !line.starts_with("--") {
+                                    markdown_content.push_str(&format!("      \x1b[31m{}\x1b[0m\n", line));
+                                } else {
+                                    markdown_content.push_str(&format!("      {}\n", line));
+                                }
                             }
                             if lines > self.max_preview_lines {
                                 markdown_content.push_str(&format!("      ... {} more lines\n", lines - self.max_preview_lines));

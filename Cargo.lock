@@ -3139,7 +3139,7 @@ dependencies = [
 
 [[package]]
 name = "shai"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "ansi-to-tui",
  "async-trait",
@@ -3165,13 +3165,15 @@ dependencies = [
  "tempfile",
  "textwrap",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "tui-textarea",
+ "uuid",
 ]
 
 [[package]]
 name = "shai-core"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3235,7 +3237,7 @@ dependencies = [
 
 [[package]]
 name = "shai-llm"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -3259,7 +3261,7 @@ dependencies = [
 
 [[package]]
 name = "shai-macros"
-version = "0.1.10"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

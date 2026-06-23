@@ -300,6 +300,41 @@ fn run_verification(
     results
 }
 
+/// Copy bundled AGENTS.md and skills into the fixture directory so the agent
+/// has access to project context and skills during benchmark runs.
+fn inject_context(fixture_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    // Copy AGENTS.md
+    let agents_src = manifest_dir.join("examples/AGENTS.md");
+    if agents_src.exists() {
+        fs::copy(&agents_src, fixture_dir.join("AGENTS.md"))?;
+        eprintln!("░ Injected AGENTS.md");
+    }
+
+    // Copy all skills from examples/skills/ into <fixture>/.shai/skills/
+    let skills_src = manifest_dir.join("examples/skills");
+    let skills_dst = fixture_dir.join(".shai").join("skills");
+    fs::create_dir_all(&skills_dst)?;
+
+    let mut injected = 0;
+    for entry in fs::read_dir(&skills_src)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            let src_skill = entry.path().join("SKILL.md");
+            if src_skill.exists() {
+                let dest_dir = skills_dst.join(entry.file_name());
+                fs::create_dir_all(&dest_dir)?;
+                fs::copy(&src_skill, dest_dir.join("SKILL.md"))?;
+                injected += 1;
+            }
+        }
+    }
+    eprintln!("░ Injected {} skill(s)", injected);
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (script_path, clean, output_dir) = parse_args();
@@ -354,6 +389,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             eprintln!("⚠ Failed to commit git baseline");
         }
+
+        inject_context(working_dir)?;
     }
 
     {

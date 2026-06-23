@@ -1,23 +1,17 @@
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use shai_llm::LlmClient;
-use std::sync::Arc;
 use uuid::Uuid;
+use std::sync::Arc;
 
-use super::claims::ClaimManager;
-use super::AgentCore;
-use super::AgentError;
-use super::Brain;
-use crate::config::agent::AgentConfig;
+use crate::tools::mcp::mcp_oauth::signin_oauth;
+use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
+use crate::config::agent::{AgentConfig, CompactionConfig};
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
-use crate::tools::mcp::mcp_oauth::signin_oauth;
-use crate::tools::memory::{MemoryReadTool, MemoryWriteTool};
-use crate::tools::skills::SkillTool;
-use crate::tools::{
-    create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool,
-    FsOperationLog, LsTool, McpConfig, MultiEditTool, ReadTool, TodoReadTool, TodoStorage,
-    TodoWriteTool, WriteTool,
-};
+use super::Brain;
+use super::AgentCore;
+use super::claims::ClaimManager;
+use super::AgentError;
 
 /// Builder for AgentCore
 pub struct AgentBuilder {
@@ -27,6 +21,8 @@ pub struct AgentBuilder {
     pub trace: Vec<ChatMessage>,
     pub available_tools: Vec<Box<dyn AnyTool>>,
     pub permissions: ClaimManager,
+    pub compaction_config: CompactionConfig,
+    pub working_dir: Option<String>,
 }
 
 impl AgentBuilder {
@@ -36,12 +32,8 @@ impl AgentBuilder {
     pub async fn create(config_name: Option<String>) -> Result<Self, AgentError> {
         match config_name {
             Some(name) => {
-                let config = AgentConfig::load(&name).map_err(|e| {
-                    AgentError::ConfigurationError(format!(
-                        "Failed to load agent '{}': {}",
-                        name, e
-                    ))
-                })?;
+                let config = AgentConfig::load(&name)
+                    .map_err(|e| AgentError::ConfigurationError(format!("Failed to load agent '{}': {}", name, e)))?;
                 Self::from_config(config).await
             }
             None => Self::default().await,
@@ -51,9 +43,8 @@ impl AgentBuilder {
     /// Create a default AgentBuilder using ShaiConfig LLM and default tools
     pub async fn default() -> Result<Self, AgentError> {
         // Get LLM from ShaiConfig
-        let (llm_client, model) = ShaiConfig::get_llm().await.map_err(|e| {
-            AgentError::ConfigurationError(format!("Failed to get LLM from config: {}", e))
-        })?;
+        let (llm_client, model) = ShaiConfig::get_llm().await
+            .map_err(|e| AgentError::ConfigurationError(format!("Failed to get LLM from config: {}", e)))?;
 
         // Create default brain
         let brain = Box::new(CoderBrain::new(Arc::new(llm_client), model));
@@ -74,6 +65,8 @@ impl AgentBuilder {
             trace: vec![],
             available_tools: vec![],
             permissions: ClaimManager::new(),
+            compaction_config: CompactionConfig::default(),
+            working_dir: None,
         }
     }
 
@@ -93,9 +86,6 @@ impl AgentBuilder {
             Box::new(TodoReadTool::new(todo_storage.clone())),
             Box::new(TodoWriteTool::new(todo_storage.clone())),
             Box::new(WriteTool::new(fs_log)),
-            Box::new(MemoryWriteTool::new()),
-            Box::new(MemoryReadTool::new()),
-            Box::new(SkillTool::new()),
         ]
     }
 }
@@ -105,17 +95,17 @@ impl AgentBuilder {
         self.session_id = session_id.to_string();
         self
     }
-
+        
     pub fn brain(mut self, brain: Box<dyn Brain>) -> Self {
         self.brain = brain;
         self
     }
-
+    
     pub fn goal(mut self, goal: &str) -> Self {
         self.goal = Some(goal.to_string());
         self
     }
-
+    
     pub fn with_traces(mut self, trace: Vec<ChatMessage>) -> Self {
         self.trace = trace;
         self
@@ -125,9 +115,14 @@ impl AgentBuilder {
         self.available_tools = available_tools;
         self
     }
-
+    
     pub fn permissions(mut self, permissions: ClaimManager) -> Self {
         self.permissions = permissions;
+        self
+    }
+
+    pub fn working_dir(mut self, working_dir: impl Into<String>) -> Self {
+        self.working_dir = Some(working_dir.into());
         self
     }
 
@@ -138,13 +133,11 @@ impl AgentBuilder {
     }
 
     /// Build the AgentCore with required runtime fields
-    pub fn build(mut self) -> AgentCore {
+    pub fn build(mut self) -> AgentCore {        
         if let Some(goal) = self.goal {
-            self.trace.push(ChatMessage::User {
-                content: ChatMessageContent::Text(goal.clone()),
-                name: None,
-            });
+            self.trace.push(ChatMessage::User { content: ChatMessageContent::Text(goal.clone()), name: None });
         }
+
 
         AgentCore::new(
             self.session_id.clone(),
@@ -152,6 +145,8 @@ impl AgentBuilder {
             self.trace,
             self.available_tools,
             self.permissions,
+            self.compaction_config,
+            self.working_dir,
         )
     }
 
@@ -159,11 +154,8 @@ impl AgentBuilder {
     pub async fn from_config(mut config: AgentConfig) -> Result<Self, AgentError> {
         // Create LLM client from provider config using the utility method
         let llm_client = Arc::new(
-            LlmClient::create_provider(
-                &config.llm_provider.provider,
-                &config.llm_provider.env_vars,
-            )
-            .map_err(|e| AgentError::LlmError(e.to_string()))?,
+            LlmClient::create_provider(&config.llm_provider.provider, &config.llm_provider.env_vars)
+                .map_err(|e| AgentError::LlmError(e.to_string()))?
         );
 
         // Create brain with custom system prompt and temperature
@@ -176,67 +168,48 @@ impl AgentBuilder {
 
         // Create tools
         let tools = Self::create_tools_from_config(&mut config).await?;
-
+        
         // Display available tools by category
-        let mut tool_groups: std::collections::HashMap<String, Vec<String>> =
-            std::collections::HashMap::new();
-
+        let mut tool_groups: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        
         for tool in &tools {
             let group_name = tool.group().unwrap_or("unknown").to_string();
-            tool_groups.entry(group_name).or_default().push(tool.name());
+            tool_groups.entry(group_name).or_insert_with(Vec::new).push(tool.name());
         }
-
+        
         // Display builtin tools first
         if let Some(builtin_tools) = tool_groups.remove("builtin") {
             eprintln!("\x1b[2m░ builtin: {}\x1b[0m", builtin_tools.join(", "));
         }
-
+        
         // Display MCP tools
         for (group_name, group_tools) in tool_groups {
             if group_name != "unknown" {
-                eprintln!(
-                    "\x1b[2m░ mcp({}): {}\x1b[0m",
-                    group_name,
-                    group_tools.join(", ")
-                );
+                eprintln!("\x1b[2m░ mcp({}): {}\x1b[0m", group_name, group_tools.join(", "));
             }
         }
 
-        Ok(Self::with_brain(brain)
+        let mut builder = Self::with_brain(brain);
+        builder.compaction_config = config.compaction.clone();
+        Ok(builder
             .tools(tools)
             .id(&format!("agent-{}", config.name)))
     }
 
     /// Create tools from config
-    async fn create_tools_from_config(
-        config: &mut AgentConfig,
-    ) -> Result<Vec<Box<dyn AnyTool>>, AgentError> {
+    async fn create_tools_from_config(config: &mut AgentConfig) -> Result<Vec<Box<dyn AnyTool>>, AgentError> {
         let mut tools: Vec<Box<dyn AnyTool>> = Vec::new();
 
         // Create shared storage for todo tools
         let todo_storage = Arc::new(TodoStorage::new());
-
+        
         // Create shared operation log for file system tools
         let fs_log = Arc::new(FsOperationLog::new());
 
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
             // Add all builtin tools
-            vec![
-                "bash",
-                "edit",
-                "multiedit",
-                "fetch",
-                "find",
-                "ls",
-                "read",
-                "todo_read",
-                "todo_write",
-                "write",
-                "memory_write",
-                "memory_read",
-                "skill",
-            ]
+            vec!["bash", "edit", "multiedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()
@@ -244,14 +217,10 @@ impl AgentBuilder {
 
         for tool_name in builtin_tools_to_add {
             // Skip if tool is in builtin excluded list
-            if config
-                .tools
-                .builtin_excluded
-                .contains(&tool_name.to_string())
-            {
+            if config.tools.builtin_excluded.contains(&tool_name.to_string()) {
                 continue;
             }
-
+            
             match tool_name {
                 "bash" => tools.push(Box::new(BashTool::new())),
                 "edit" => tools.push(Box::new(EditTool::new(fs_log.clone()))),
@@ -263,15 +232,7 @@ impl AgentBuilder {
                 "todo_read" => tools.push(Box::new(TodoReadTool::new(todo_storage.clone()))),
                 "todo_write" => tools.push(Box::new(TodoWriteTool::new(todo_storage.clone()))),
                 "write" => tools.push(Box::new(WriteTool::new(fs_log.clone()))),
-                "memory_write" => tools.push(Box::new(MemoryWriteTool::new())),
-                "memory_read" => tools.push(Box::new(MemoryReadTool::new())),
-                "skill" => tools.push(Box::new(SkillTool::new())),
-                _ => {
-                    return Err(AgentError::ConfigurationError(format!(
-                        "Unknown builtin tool: {}",
-                        tool_name
-                    )))
-                }
+                _ => return Err(AgentError::ConfigurationError(format!("Unknown builtin tool: {}", tool_name))),
             }
         }
 
@@ -305,10 +266,7 @@ impl AgentBuilder {
                 Ok(tools) => tools,
                 Err(e) => {
                     if mcp_tool_config.required {
-                        return Err(AgentError::ConfigurationError(format!(
-                            "Failed to get tools from MCP '{}': {}",
-                            mcp_name, e
-                        )));
+                        return Err(AgentError::ConfigurationError(format!("Failed to get tools from MCP '{}': {}", mcp_name, e)));
                     } else {
                         eprintln!("\x1b[2m⚠ MCP '{}' failed to get tools: {}. Skipping (not required).\x1b[0m", mcp_name, e);
                         continue;
@@ -329,9 +287,7 @@ impl AgentBuilder {
                 // Filter and add only enabled tools (except excluded ones)
                 for tool in all_mcp_tools {
                     let tool_name = tool.name();
-                    if mcp_tool_config.enabled_tools.contains(&tool_name)
-                        && !mcp_tool_config.excluded_tools.contains(&tool_name)
-                    {
+                    if mcp_tool_config.enabled_tools.contains(&tool_name) && !mcp_tool_config.excluded_tools.contains(&tool_name) {
                         tools.push(tool);
                     }
                 }
@@ -341,10 +297,7 @@ impl AgentBuilder {
                     let found = tools.iter().any(|t| t.name() == *enabled_tool);
                     if !found {
                         if mcp_tool_config.required {
-                            return Err(AgentError::ConfigurationError(format!(
-                                "Tool '{}' not found in MCP client '{}'",
-                                enabled_tool, mcp_name
-                            )));
+                            return Err(AgentError::ConfigurationError(format!("Tool '{}' not found in MCP client '{}'", enabled_tool, mcp_name)));
                         } else {
                             eprintln!("\x1b[2m⚠ Tool '{}' not found in MCP client '{}'. Skipping (not required).\x1b[0m", enabled_tool, mcp_name);
                         }
@@ -355,19 +308,14 @@ impl AgentBuilder {
 
         // Save config if OAuth flow added new tokens
         if config_changed {
-            config.save().map_err(|e| {
-                AgentError::ConfigurationError(format!("Failed to save agent config: {}", e))
-            })?;
+            config.save().map_err(|e| AgentError::ConfigurationError(format!("Failed to save agent config: {}", e)))?;
         }
 
         Ok(tools)
     }
 
     /// Handle OAuth flow for MCP connections if needed
-    async fn mcp_check_oauth(
-        mcp_name: &str,
-        mcp_config: &mut McpConfig,
-    ) -> Result<bool, AgentError> {
+    async fn mcp_check_oauth(mcp_name: &str, mcp_config: &mut McpConfig) -> Result<bool, AgentError> {
         use crate::tools::mcp::McpConfig;
         let mut config_changed = false;
 
@@ -375,45 +323,27 @@ impl AgentBuilder {
         if let McpConfig::Http { url, auth } = mcp_config {
             let needs_new_token = match auth {
                 Some(token) if token.is_expired() => {
-                    eprintln!(
-                        "\x1b[2m░ MCP '{}' token expired, refreshing...\x1b[0m",
-                        mcp_name
-                    );
+                    eprintln!("\x1b[2m░ MCP '{}' token expired, refreshing...\x1b[0m", mcp_name);
                     true
                 }
                 Some(_) => {
                     // Test connection with existing token
-                    let test_config = McpConfig::Http {
-                        url: url.clone(),
-                        auth: auth.clone(),
-                    };
+                    let test_config = McpConfig::Http { url: url.clone(), auth: auth.clone() };
                     let mut test_client = create_mcp_client(test_config);
                     if test_client.connect().await.is_ok() {
-                        eprintln!(
-                            "\x1b[2m░ MCP '{}' connected (authenticated)\x1b[0m",
-                            mcp_name
-                        );
+                        eprintln!("\x1b[2m░ MCP '{}' connected (authenticated)\x1b[0m", mcp_name);
                         false
                     } else {
-                        eprintln!(
-                            "\x1b[2m░ MCP '{}' authentication failed, refreshing token...\x1b[0m",
-                            mcp_name
-                        );
+                        eprintln!("\x1b[2m░ MCP '{}' authentication failed, refreshing token...\x1b[0m", mcp_name);
                         true
                     }
                 }
                 None => {
                     // Test connection without auth
-                    let test_config = McpConfig::Http {
-                        url: url.clone(),
-                        auth: None,
-                    };
+                    let test_config = McpConfig::Http { url: url.clone(), auth: None };
                     let mut test_client = create_mcp_client(test_config);
                     if test_client.connect().await.is_ok() {
-                        eprintln!(
-                            "\x1b[2m░ MCP '{}' connected (no auth required)\x1b[0m",
-                            mcp_name
-                        );
+                        eprintln!("\x1b[2m░ MCP '{}' connected (no auth required)\x1b[0m", mcp_name);
                         false
                     } else {
                         eprintln!("\x1b[2m░ MCP '{}' requires authentication, starting OAuth flow...\x1b[0m", mcp_name);
@@ -431,10 +361,7 @@ impl AgentBuilder {
                         config_changed = true;
                     }
                     Err(e) => {
-                        return Err(AgentError::ConfigurationError(format!(
-                            "OAuth failed for MCP '{}': {}",
-                            mcp_name, e
-                        )));
+                        return Err(AgentError::ConfigurationError(format!("OAuth failed for MCP '{}': {}", mcp_name, e)));
                     }
                 }
             }

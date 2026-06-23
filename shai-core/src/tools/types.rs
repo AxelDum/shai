@@ -111,6 +111,15 @@ impl ToolResult {
         matches!(self, Self::Error { .. })
     }
 
+    /// Get the metadata if present
+    pub fn metadata(&self) -> Option<&HashMap<String, serde_json::Value>> {
+        match self {
+            ToolResult::Success { metadata, .. } => metadata.as_ref(),
+            ToolResult::Error { metadata, .. } => metadata.as_ref(),
+            ToolResult::Denied => None,
+        }
+    }
+
     /// Check if the tool was denied
     pub fn is_denied(&self) -> bool {
         matches!(self, Self::Denied)

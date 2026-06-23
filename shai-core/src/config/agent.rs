@@ -51,6 +51,33 @@ pub struct AgentConfig {
     pub max_tokens: u32,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    #[serde(default)]
+    pub compaction: CompactionConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_max_output_chars")]
+    pub max_output_chars: usize,
+}
+
+impl Default for CompactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_output_chars: 8000,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_output_chars() -> usize {
+    8000
 }
 
 fn default_llm_provider() -> AgentProviderConfig {

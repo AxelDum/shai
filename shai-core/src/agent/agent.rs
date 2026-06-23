@@ -18,6 +18,7 @@ use tracing::debug;
 
 use super::protocol::{AgentController, SentCommand};
 use super::{AgentEventHandler, AgentResponse};
+use crate::config::agent::CompactionConfig;
 
 /// Trait defining the public interface for agents
 #[async_trait]
@@ -68,6 +69,8 @@ pub struct AgentCore {
     pub available_tools: Vec<Arc<dyn AnyTool>>,
     pub permissions: Arc<RwLock<ClaimManager>>,
     pub state: InternalAgentState,
+    pub compaction_config: CompactionConfig,
+    pub working_dir: Option<String>,
 
     /// internal event
     pub internal_tx: broadcast::Sender<InternalAgentEvent>, // event may be produced from many part of the agent
@@ -88,6 +91,8 @@ impl AgentCore {
         trace: Vec<ChatMessage>,
         available_tools: Vec<Box<dyn AnyTool>>,
         permissions: ClaimManager,
+        compaction_config: CompactionConfig,
+        working_dir: Option<String>,
     ) -> Self {
         let (internal_tx, internal_rx) = broadcast::channel(1024);
         Self {
@@ -107,6 +112,8 @@ impl AgentCore {
                 .collect(),
             permissions: Arc::new(RwLock::new(permissions)),
             state: InternalAgentState::Starting,
+            compaction_config,
+            working_dir,
             internal_tx,
             internal_rx,
         }

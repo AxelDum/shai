@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -37,7 +38,8 @@ struct TurnMetrics {
 #[derive(Serialize, Clone, Debug)]
 struct ToolCallMetrics {
     tool_name: String,
-    output_bytes: u64,
+    original_bytes: u64,
+    compacted_bytes: u64,
     duration_ms: u64,
 }
 
@@ -50,6 +52,8 @@ struct SessionSummary {
     cache_hit_rate: f64,
     total_tool_calls: usize,
     total_tool_output_bytes: u64,
+    total_compacted_bytes: u64,
+    compaction_ratio: f64,
 }
 
 /// Full report
@@ -70,6 +74,9 @@ struct MetricsState {
     turns: Vec<TurnMetrics>,
     turn_start: Option<Instant>,
     tool_calls: Vec<ToolCallMetrics>,
+    pending_input_tokens: u32,
+    pending_output_tokens: u32,
+    pending_cached_tokens: u32,
 }
 
 /// Event handler that captures metrics from agent events
@@ -90,22 +97,17 @@ impl AgentEventHandler for MetricsHandler {
         match event {
             AgentEvent::TokenUsage { input_tokens, output_tokens, cached_tokens } => {
                 let mut s = self.state.lock().unwrap();
-                if let Some(last) = s.turns.last_mut() {
-                    last.input_tokens += input_tokens;
-                    last.output_tokens += output_tokens;
-                    last.cached_tokens += cached_tokens;
-                }
+                s.pending_input_tokens += input_tokens;
+                s.pending_output_tokens += output_tokens;
+                s.pending_cached_tokens += cached_tokens;
             }
-            AgentEvent::ToolCallCompleted { duration, call, result } => {
-                let output_bytes = match &result {
-                    shai_core::tools::ToolResult::Success { output, .. } => output.len() as u64,
-                    shai_core::tools::ToolResult::Error { error, .. } => error.len() as u64,
-                    shai_core::tools::ToolResult::Denied => 0,
-                };
+            AgentEvent::ToolCallCompleted { duration, call, result, original_bytes, compacted_bytes } => {
+                let _ = result; // result is unused, we track bytes below
                 let mut s = self.state.lock().unwrap();
                 s.tool_calls.push(ToolCallMetrics {
                     tool_name: call.tool_name,
-                    output_bytes,
+                    original_bytes: original_bytes as u64,
+                    compacted_bytes: compacted_bytes as u64,
                     duration_ms: duration.num_milliseconds() as u64,
                 });
             }
@@ -231,10 +233,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         turns: Vec::new(),
         turn_start: None,
         tool_calls: Vec::new(),
+        pending_input_tokens: 0,
+        pending_output_tokens: 0,
+        pending_cached_tokens: 0,
     }));
 
     // Build agent with metrics handler
+    let fixture_path_str = fixture_dir.as_ref().map(|p| p.to_string_lossy().to_string());
     let mut agent = coder(Arc::new(llm), model.clone());
+    if let Some(ref dir) = fixture_dir {
+        agent.working_dir = Some(dir.to_string_lossy().to_string());
+    }
     let mut controller = agent.controller();
     let handler = MetricsHandler::new(shared_state.clone(), controller.clone());
     let mut agent = agent.with_event_handler(handler);
@@ -268,14 +277,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut s = state_flush.lock().unwrap();
         let start = s.turn_start.take();
         let tool_calls = std::mem::take(&mut s.tool_calls);
+        let input_tokens = std::mem::take(&mut s.pending_input_tokens);
+        let output_tokens = std::mem::take(&mut s.pending_output_tokens);
+        let cached_tokens = std::mem::take(&mut s.pending_cached_tokens);
         let turn = s.current_turn;
         let duration_ms = start.map(|inst| inst.elapsed().as_millis() as u64).unwrap_or(0);
         s.turns.push(TurnMetrics {
             turn,
             prompt,
-            input_tokens: 0,
-            output_tokens: 0,
-            cached_tokens: 0,
+            input_tokens,
+            output_tokens,
+            cached_tokens,
             tool_calls,
             duration_ms,
         });
@@ -317,11 +329,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_output: u32 = turns.iter().map(|t| t.output_tokens).sum();
     let total_cached: u32 = turns.iter().map(|t| t.cached_tokens).sum();
     let total_tool_calls: usize = turns.iter().map(|t| t.tool_calls.len()).sum();
-    let total_tool_output_bytes: u64 = turns.iter().map(|t| t.tool_calls.iter().map(|tc| tc.output_bytes).sum::<u64>()).sum();
+    let total_tool_output_bytes: u64 = turns.iter().map(|t| t.tool_calls.iter().map(|tc| tc.original_bytes).sum::<u64>()).sum();
+    let total_compacted_bytes: u64 = turns.iter().map(|t| t.tool_calls.iter().map(|tc| tc.compacted_bytes).sum::<u64>()).sum();
     let cache_hit_rate = if total_input > 0 {
         total_cached as f64 / total_input as f64
     } else {
         0.0
+    };
+    let compaction_ratio = if total_tool_output_bytes > 0 {
+        total_compacted_bytes as f64 / total_tool_output_bytes as f64
+    } else {
+        1.0
     };
 
     let fixture_path = fixture_dir.as_ref()
@@ -340,6 +358,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cache_hit_rate,
             total_tool_calls,
             total_tool_output_bytes,
+            total_compacted_bytes,
+            compaction_ratio,
         },
         total_duration_ms,
     };
@@ -350,7 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("\n░ Session complete");
     eprintln!("░ Total input tokens:  {} ({} cached, {:.1}% hit rate)", total_input, total_cached, cache_hit_rate * 100.0);
     eprintln!("░ Total output tokens: {}", total_output);
-    eprintln!("░ Total tool calls: {} ({} bytes output)", total_tool_calls, total_tool_output_bytes);
+    eprintln!("░ Total tool calls: {} ({} bytes → {} compacted, {:.1}% reduction)", total_tool_calls, total_tool_output_bytes, total_compacted_bytes, (1.0 - compaction_ratio) * 100.0);
     eprintln!("░ Duration: {:.1}s", total_duration_ms as f64 / 1000.0);
 
     if let Some(ref dir) = fixture_dir {

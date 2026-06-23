@@ -10,6 +10,7 @@ use crate::agent::{AgentBuilder, AgentError, AgentCore, Brain, ThinkerContext};
 use crate::tools::types::{ContainsAnyTool, IntoToolBox};
 use shai_llm::tool::LlmToolCall;
 use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, MultiEditTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
+use crate::tools::skills::SkillTool;
 
 use super::prompt::{render_system_prompt_template, get_todo_read};
 use crate::runners::compacter::compact_trace_if_needed;
@@ -20,26 +21,29 @@ pub struct CoderBrain {
     pub model: String,
     pub system_prompt_template: String,
     pub temperature: f32,
+    pub cached_prompt: Option<String>,
 }
 
 impl CoderBrain {
     pub fn new(llm: Arc<LlmClient>, model: String) -> Self {
         debug!(target: "brain::coder", provider =?llm.provider_name(), model = ?model);
-        Self { 
-            llm, 
+        Self {
+            llm,
             model,
             system_prompt_template: "{{CODER_BASE_PROMPT}}".to_string(),
-            temperature: 0.3,
+            temperature: 0.0,
+            cached_prompt: None,
         }
     }
 
     pub fn with_custom_prompt(llm: Arc<LlmClient>, model: String, system_prompt_template: String, temperature: f32) -> Self {
         debug!(target: "brain::coder", provider =?llm.provider_name(), model = ?model);
-        Self { 
-            llm, 
+        Self {
+            llm,
             model,
             system_prompt_template,
             temperature,
+            cached_prompt: None,
         }
     }
 }
@@ -55,25 +59,34 @@ impl Brain for CoderBrain {
             compact_trace_if_needed(&mut trace, context.max_trace_chars);
         }
 
-        // Render the user's system prompt template
-        let mut system_prompt = render_system_prompt_template(&self.system_prompt_template);
+        // Render the user's system prompt template (cached after first call)
+        let system_prompt = match &self.cached_prompt {
+            Some(cached) => cached.clone(),
+            None => {
+                let rendered = render_system_prompt_template(&self.system_prompt_template);
+                self.cached_prompt = Some(rendered.clone());
+                rendered
+            }
+        };
         
         // Add todo status if available
+        let mut system_prompt_full = system_prompt;
         if let Some(tool) = context.available_tools.get_tool("todo_read") {
             let todo_status = get_todo_read(&tool).await;
-            system_prompt += &todo_status;
+            system_prompt_full += &todo_status;
         }
 
         trace.insert(0, ChatMessage::System {
-            content: ChatMessageContent::Text(system_prompt),
+            content: ChatMessageContent::Text(system_prompt_full),
             name: None,
         });
 
         // get next step with custom temperature
+        eprintln!("[brain::coder] temperature={}", context.temperature);
         let request = ChatCompletionParametersBuilder::default()
             .model(&self.model)
             .messages(trace)
-            .temperature(self.temperature)
+            .temperature(context.temperature)
             .build()
             .map_err(|e| AgentError::LlmError(e.to_string()))?;
         
@@ -133,7 +146,7 @@ pub fn coder(llm: Arc<LlmClient>, model: String) -> AgentCore {
     let todoread = Box::new(TodoReadTool::new(todo_storage.clone()));
     let todowrite = Box::new(TodoWriteTool::new(todo_storage.clone()));
     let write = Box::new(WriteTool::new(fs_log.clone()));
-    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, multiedit, fetch, find, ls, read, todoread, todowrite, write];
+    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, multiedit, fetch, find, ls, read, todoread, todowrite, write, Box::new(SkillTool::new())];
 
     AgentBuilder::with_brain(Box::new(CoderBrain::new(llm.clone(), model)))
     .tools(toolbox)

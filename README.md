@@ -160,6 +160,32 @@ You can run shai with this specific agent with the `agent` subcommand:
 shai agent ovh
 ```
 
+### Temperature
+
+Shai defaults to a sampling temperature of `0.0` (deterministic/greedy decoding). You can adjust this at runtime:
+
+**In the TUI:**
+
+```shai
+/temp 0.3
+```
+
+**Via CLI flag (headless mode):**
+
+```bash
+shai --temperature 0.3 "fix this bug"
+```
+
+**Via agent config file:**
+
+```json
+{
+  "name": "my-agent",
+  "temperature": 0.3,
+  ...
+}
+```
+
 ### OVHCloud Endpoints
 
 OVHCloud provides compatible LLM endpoints for using shai with tools. Start by creating a [_Public Cloud_ project in your OVHCloud account](https://www.ovh.com/manager/#/public-cloud), then head to _AI Endpoints_ and retreive your API key. After setting it in shai, you can:

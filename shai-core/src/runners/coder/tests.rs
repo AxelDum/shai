@@ -74,6 +74,7 @@ async fn test_coder_brain_think_simple() {
         available_tools: vec![],
         method: ToolCallMethod::FunctionCall,
         max_trace_chars: 50000,
+        temperature: 0.0,
     };
     
     let result = brain.next_step(context).await;

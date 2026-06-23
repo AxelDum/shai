@@ -14,11 +14,13 @@ impl AgentCore {
         let available_tools = self.available_tools.clone();
         let method = self.method.clone();
         let max_trace_chars = self.compaction_config.max_trace_chars;
+        let temperature = *self.temperature.read().await;
         let context = ThinkerContext {
             trace,
             available_tools,
             method,
             max_trace_chars,
+            temperature,
         };
         let brain = self.brain.clone();
         

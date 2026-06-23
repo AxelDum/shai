@@ -25,6 +25,8 @@ pub enum AgentRequest {
     LoadTrace { messages: Vec<ChatMessage> },
     /// Switch method for tool call
     SwitchToolCallMethod { method: Option<ToolCallMethod> },
+    /// Set the LLM sampling temperature
+    SetTemperature { temperature: f32 },
     /// Send user input (cancels current task, adds to trace, resumes agent)
     UserQueryResponse {
         request_id: String,
@@ -50,6 +52,7 @@ pub enum AgentRequest {
 pub enum AgentResponse {
     Ack,
     Method { method: ToolCallMethod },
+    Temperature { temperature: f32 },
     State { state: PublicAgentState },
     Trace { trace: Vec<ChatMessage> },
     SudoStatus { enabled: bool },
@@ -116,6 +119,15 @@ impl AgentController {
             AgentResponse::Method { method } => Ok(method),
             _ => Err(AgentError::InvalidResponse(
                 "Expected Method response".to_string(),
+            )),
+        }
+    }
+
+    pub async fn set_temperature(&self, temperature: f32) -> Result<f32, AgentError> {
+        match self.send(AgentRequest::SetTemperature { temperature }).await? {
+            AgentResponse::Temperature { temperature } => Ok(temperature),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected Temperature response".to_string(),
             )),
         }
     }

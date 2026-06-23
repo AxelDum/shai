@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: OVH SAS
 
-use std::fs;
-use std::io::{self, ErrorKind};
-use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use openai_dive::v1::resources::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::{self, ErrorKind};
+use std::path::PathBuf;
 use tracing::{debug, error};
 use uuid::Uuid;
 
@@ -45,10 +45,7 @@ impl SessionPersist {
     }
 
     /// Save a session to disk (atomic write using temp file)
-    pub fn save_session(
-        session_id: &str,
-        trace: Vec<ChatMessage>,
-    ) -> Result<(), PersistError> {
+    pub fn save_session(session_id: &str, trace: Vec<ChatMessage>) -> Result<(), PersistError> {
         if !Self::is_enabled() {
             return Ok(());
         }
@@ -66,12 +63,10 @@ impl SessionPersist {
         // Load existing data to preserve created_at, or create new
         let (created_at, updated_at) = if file_path.exists() {
             match fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    match serde_json::from_str::<SessionData>(&content) {
-                        Ok(existing) => (existing.created_at, Utc::now()),
-                        Err(_) => (Utc::now(), Utc::now()),
-                    }
-                }
+                Ok(content) => match serde_json::from_str::<SessionData>(&content) {
+                    Ok(existing) => (existing.created_at, Utc::now()),
+                    Err(_) => (Utc::now(), Utc::now()),
+                },
                 Err(_) => (Utc::now(), Utc::now()),
             }
         } else {
@@ -101,11 +96,7 @@ impl SessionPersist {
     /// Returns the session data if found, or an error if not found or failed to load
     pub fn load_session(session_id: &str) -> Result<SessionData, PersistError> {
         if !Self::is_enabled() {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "Session persistence is not enabled",
-            )
-            .into());
+            return Err(io::Error::other("Session persistence is not enabled").into());
         }
 
         let file_path = Self::session_file_path(session_id);
@@ -147,11 +138,7 @@ impl SessionPersist {
     /// List all saved sessions IDs from disk
     pub fn list_sessions() -> Result<Vec<SessionData>, PersistError> {
         if !Self::is_enabled() {
-            return Err(io::Error::new(
-                ErrorKind::Other,
-                "Session persistence is not enabled",
-            )
-            .into());
+            return Err(io::Error::other("Session persistence is not enabled").into());
         }
 
         let folder = Self::folder();
@@ -177,8 +164,14 @@ impl SessionPersist {
             }
         }
 
+        // Filter out sessions with empty traces
+        let mut sessions: Vec<SessionData> = sessions
+            .into_iter()
+            .filter(|s| !s.trace.is_empty())
+            .collect();
+
         // Sort by updated_at descending (most recent first)
-        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        sessions.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
         Ok(sessions)
     }
 }

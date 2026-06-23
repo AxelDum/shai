@@ -3,4 +3,4 @@
 
 pub mod persist;
 
-pub use persist::{SessionPersist, SessionData};
+pub use persist::{SessionData, SessionPersist};

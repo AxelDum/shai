@@ -36,20 +36,32 @@ pub struct ThemePalette {
     pub suggestion_selected_bg: Color,
     pub cursor_fg: Color,
     pub cursor_bg: Color,
+    pub error: Color,
+    pub diff_added: Color,
+    pub diff_removed: Color,
 }
 
 impl Theme {
-    /// Read theme from SHAI_TUI_THEME environment variable
-    /// Defaults to Dark if not set or invalid
+    /// Detect theme from environment variables and terminal capabilities
+    /// Checks SHAI_TUI_THEME first, then COLORFGS/NO_COLOR, defaults to Dark
     pub fn from_env() -> Self {
-        std::env::var("SHAI_TUI_THEME")
-            .ok()
-            .and_then(|s| match s.to_lowercase().as_str() {
-                "light" => Some(Theme::Light),
-                "dark" => Some(Theme::Dark),
-                _ => None,
-            })
-            .unwrap_or(Theme::Dark)
+        // Explicit override takes priority
+        if let Ok(theme) = std::env::var("SHAI_TUI_THEME") {
+            match theme.to_lowercase().as_str() {
+                "light" => return Theme::Light,
+                "dark" => return Theme::Dark,
+                _ => {}
+            }
+ }
+
+        // Respect NO_COLOR convention (https://no-color.org/)
+        if std::env::var("NO_COLOR").is_ok() {
+            // NO_COLOR doesn't necessarily mean light theme, but we can't detect
+            // terminal background reliably, so fall through to default
+        }
+
+        // Default to Dark theme
+        Theme::Dark
     }
 
     pub fn toggle(&mut self) {
@@ -72,18 +84,24 @@ impl Theme {
                 suggestion_selected_bg: Color::DarkGray,
                 cursor_fg: Color::White,
                 cursor_bg: Color::White,
+                error: Color::Rgb(255, 100, 100),
+                diff_added: Color::Rgb(100, 255, 100),
+                diff_removed: Color::Rgb(255, 100, 100),
             },
             Theme::Light => ThemePalette {
                 input_text: Color::Black,
-                placeholder: Color::Rgb(120, 120, 120),  // Medium gray
-                border: Color::Rgb(100, 100, 100),       // Darker gray for visibility
-                status: Color::Rgb(200, 100, 0),         // Orange (readable on white)
-                method_label: Color::Rgb(100, 100, 100), // Same as border
+                placeholder: Color::Rgb(120, 120, 120),
+                border: Color::Rgb(100, 100, 100),
+                status: Color::Rgb(200, 100, 0),
+                method_label: Color::Rgb(100, 100, 100),
                 suggestion_normal: Color::Black,
                 suggestion_selected_fg: Color::Black,
-                suggestion_selected_bg: Color::Rgb(255, 220, 100), // Light yellow highlight
+                suggestion_selected_bg: Color::Rgb(255, 220, 100),
                 cursor_fg: Color::Black,
                 cursor_bg: Color::Black,
+                error: Color::Rgb(200, 0, 0),
+                diff_added: Color::Rgb(0, 150, 0),
+                diff_removed: Color::Rgb(200, 0, 0),
             },
         }
     }

@@ -15,14 +15,20 @@ impl HelpArea {
             "  Available Commands:",
             "  /exit                exit from the tui",
             "  /tc <method>         set tool call method: [auto | fc | fc2 | so]",
-            "  /tokens              display token usage"
+            "  /tokens              display token usage",
+            "  /theme [dark|light]  set or toggle theme",
+            "",
+            "  Shortcuts:",
+            "  Ctrl+T               toggle dark/light theme",
+            "  Ctrl+V               paste from clipboard",
+            "  Alt+Enter            insert newline (multi-line input)",
         ].join("\n").to_string()
     }
 }
 
 impl HelpArea {
     pub fn height(&self) -> u16 {
-        8 // content (3 general help lines + 1 blank + 1 header + 3 command lines)
+        12 // content (3 general help lines + 1 blank + 1 header + 3 command lines + 1 blank + 4 shortcut lines)
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {

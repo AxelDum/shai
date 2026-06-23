@@ -6,6 +6,8 @@ pub mod perm_alt_screen;
 pub mod theme;
 pub mod command;
 pub mod helper;
-pub mod cmdnav;
+pub mod statusbar;
+pub mod history;
+pub mod shortcuts;
 
 pub use app::App;

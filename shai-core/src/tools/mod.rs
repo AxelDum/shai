@@ -5,6 +5,8 @@ pub mod fs;
 pub mod fetch;
 pub mod bash;
 pub mod mcp;
+pub mod memory;
+
 
 #[cfg(test)]
 mod tests_llm;

@@ -18,7 +18,7 @@ use shai_core::agent::{AgentController, AgentEvent, PublicAgentState};
 use shai_llm::{tool::call_fc_auto::ToolCallFunctionCallingAuto, ToolCallMethod};
 use tui_textarea::{Input, TextArea};
 
-use crate::{tui::{cmdnav::CommandNav, helper::HelpArea}};
+use crate::tui::helper::HelpArea;
 
 use super::theme::{SHAI_YELLOW, ThemePalette};
 
@@ -60,7 +60,6 @@ pub struct InputArea<'a> {
 
     // bottom helper
     help: Option<HelpArea>,
-    cmdnav: CommandNav,
 
     history: Vec<String>,
     history_index: usize,
@@ -69,6 +68,10 @@ pub struct InputArea<'a> {
     file_suggestions: Vec<String>,
     suggestion_index: Option<usize>,
     suggestion_search: Option<String>,
+
+    // command suggestions
+    cmd_suggestions: Vec<String>,
+    cmd_suggestion_index: Option<usize>,
 
     // gitignore patterns (loaded once)
     gitignore_patterns: Vec<String>,
@@ -94,13 +97,14 @@ impl InputArea<'_> {
             escape_press_time: None,
             method: ToolCallMethod::FunctionCall,
             help: None,
-            cmdnav: CommandNav{},
             history: Vec::new(),
             history_index: 0,
             file_suggestions: Vec::new(),
             suggestion_index: None,
             suggestion_search: None,
             gitignore_patterns: Self::load_gitignore_patterns(),
+            cmd_suggestions: Vec::new(),
+            cmd_suggestion_index: None,
             palette,
         }
     }
@@ -215,6 +219,7 @@ impl InputArea<'_> {
 
     // Update suggestions based on current input
     fn update_suggestions(&mut self) {
+        // Handle file suggestions (@-mention)
         if let Some((at_pos, search)) = self.detect_file_search() {
             if self.suggestion_search.as_ref() != Some(&search) {
                 self.suggestion_search = Some(search.clone());
@@ -229,6 +234,31 @@ impl InputArea<'_> {
             self.file_suggestions.clear();
             self.suggestion_index = None;
             self.suggestion_search = None;
+        }
+
+        // Handle command suggestions (/prefix)
+        let current_text = self.input.lines().join("\n");
+        if current_text.starts_with('/') && !current_text.contains(' ') {
+            let prefix = current_text.trim();
+            let all_commands = ["/exit", "/auth", "/tc", "/tokens", "/theme", "/restore"];
+            let filtered: Vec<String> = all_commands
+                .iter()
+                .filter(|cmd| cmd.starts_with(prefix))
+                .map(|s| s.to_string())
+                .collect();
+            if filtered.is_empty() || (filtered.len() == all_commands.len() && prefix == "/") {
+                self.cmd_suggestions = all_commands.iter().map(|s| s.to_string()).collect();
+            } else {
+                self.cmd_suggestions = filtered;
+            }
+            self.cmd_suggestion_index = if self.cmd_suggestions.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
+        } else {
+            self.cmd_suggestions.clear();
+            self.cmd_suggestion_index = None;
         }
     }
 }
@@ -456,10 +486,21 @@ impl InputArea<'_> {
                     return UserAction::Nope;
                 }
 
-                // Tab to select current suggestion
+                // Tab to select current file suggestion
                 if let Some(idx) = self.suggestion_index {
                     if let Some(file_path) = self.file_suggestions.get(idx).cloned() {
                         self.replace_file_search(&file_path);
+                    }
+                    return UserAction::Nope;
+                }
+
+                // Tab to select current command suggestion
+                if let Some(idx) = self.cmd_suggestion_index {
+                    if let Some(cmd) = self.cmd_suggestions.get(idx).cloned() {
+                        self.input = TextArea::default();
+                        self.input.insert_str(&cmd);
+                        self.cmd_suggestions.clear();
+                        self.cmd_suggestion_index = None;
                     }
                     return UserAction::Nope;
                 }
@@ -467,16 +508,25 @@ impl InputArea<'_> {
                 self.file_suggestions.clear();
                 self.suggestion_index = None;
                 self.suggestion_search = None;
+                self.cmd_suggestions.clear();
+                self.cmd_suggestion_index = None;
 
                 // Regular Enter - set pending and wait
                 self.pending_enter = Some(now);
                 return UserAction::Nope;
             }
             KeyCode::Up => {
-                // If we have suggestions, navigate through them
+                // If we have file suggestions, navigate through them
                 if !self.file_suggestions.is_empty() {
                     if let Some(idx) = self.suggestion_index {
                         self.suggestion_index = Some(if idx > 0 { idx - 1 } else { self.file_suggestions.len() - 1 });
+                    }
+                    return UserAction::Nope;
+                }
+                // If we have command suggestions, navigate through them
+                if !self.cmd_suggestions.is_empty() {
+                    if let Some(idx) = self.cmd_suggestion_index {
+                        self.cmd_suggestion_index = Some(if idx > 0 { idx - 1 } else { self.cmd_suggestions.len() - 1 });
                     }
                     return UserAction::Nope;
                 }
@@ -501,10 +551,17 @@ impl InputArea<'_> {
                 }
             }
             KeyCode::Down => {
-                // If we have suggestions, navigate through them
+                // If we have file suggestions, navigate through them
                 if !self.file_suggestions.is_empty() {
                     if let Some(idx) = self.suggestion_index {
                         self.suggestion_index = Some((idx + 1) % self.file_suggestions.len());
+                    }
+                    return UserAction::Nope;
+                }
+                // If we have command suggestions, navigate through them
+                if !self.cmd_suggestions.is_empty() {
+                    if let Some(idx) = self.cmd_suggestion_index {
+                        self.cmd_suggestion_index = Some((idx + 1) % self.cmd_suggestions.len());
                     }
                     return UserAction::Nope;
                 }
@@ -592,7 +649,12 @@ impl InputArea<'_> {
         } else {
             0
         };
-        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height()) + suggestions_height
+        let cmd_suggestions_height = if !self.cmd_suggestions.is_empty() {
+            self.cmd_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
+        self.input.lines().len().max(1) as u16 + 4 + self.help.as_ref().map_or(0, |h| h.height()) + suggestions_height + cmd_suggestions_height
     }
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect) {
@@ -601,10 +663,16 @@ impl InputArea<'_> {
         } else {
             0
         };
+        let cmd_suggestions_height = if !self.cmd_suggestions.is_empty() {
+            self.cmd_suggestions.len().min(5) as u16 + 2
+        } else {
+            0
+        };
 
-        let [status, input_area, suggestions_area, helper, help_area] = Layout::vertical([
+        let [status, input_area, cmd_suggestions_area, file_suggestions_area, helper, help_area] = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Length(self.height() - 2 - suggestions_height),
+            Constraint::Length(self.input.lines().len().max(1) as u16 + 2),
+            Constraint::Length(cmd_suggestions_height),
             Constraint::Length(suggestions_height),
             Constraint::Length(1),
             Constraint::Length(self.help.as_ref().map_or(0, |h| h.height()))
@@ -642,9 +710,16 @@ impl InputArea<'_> {
             Constraint::Length(self.method_str().len() as u16)
         ]).areas(helper);
 
+        // Multi-line indicator
+        let line_count = self.input.lines().len();
         let helper_text = self.check_helper_msg();
-        f.render_widget(
-            Span::styled(helper_text, Style::default().fg(self.palette.method_label).dim()), 
+        let multi_line_indicator = if line_count > 1 {
+            format!("{} [{} lines]", helper_text, line_count)
+        } else {
+            helper_text
+        };
+               f.render_widget(
+            Span::styled(multi_line_indicator, Style::default().fg(self.palette.input_text)), 
             helper_left
         );
                 
@@ -653,6 +728,45 @@ impl InputArea<'_> {
             Span::styled(self.method_str(), Style::default().fg(self.palette.method_label)), 
             helper_right
         );
+
+        // Command suggestions
+        if !self.cmd_suggestions.is_empty() {
+            let max_visible = 5;
+            let total = self.cmd_suggestions.len();
+            let selected = self.cmd_suggestion_index.unwrap_or(0);
+            
+            let start = if total <= max_visible {
+                0
+            } else {
+                let ideal_start = selected.saturating_sub(max_visible / 2);
+                ideal_start.min(total.saturating_sub(max_visible))
+            };
+            
+            let end = (start + max_visible).min(total);
+            
+            let items: Vec<ListItem> = self.cmd_suggestions[start..end]
+                .iter()
+                .enumerate()
+                .map(|(window_idx, cmd)| {
+                    let actual_idx = start + window_idx;
+                    let style = if Some(actual_idx) == self.cmd_suggestion_index {
+                        Style::default().fg(self.palette.suggestion_selected_fg).bg(self.palette.suggestion_selected_bg)
+                    } else {
+                        Style::default().fg(self.palette.suggestion_normal)
+                    };
+                    ListItem::new(cmd.as_str()).style(style)
+                })
+                .collect();
+
+            let suggestions_list = List::new(items)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_set(border::ROUNDED)
+                    .border_style(Style::default().fg(self.palette.border))
+                    .title("Commands"));
+
+            f.render_widget(suggestions_list, cmd_suggestions_area);
+        }
 
         // File suggestions
         if !self.file_suggestions.is_empty() {
@@ -698,7 +812,7 @@ impl InputArea<'_> {
                     .border_style(Style::default().fg(self.palette.border))
                     .title(title));
 
-            f.render_widget(suggestions_list, suggestions_area);
+            f.render_widget(suggestions_list, file_suggestions_area);
         }
 
         // help

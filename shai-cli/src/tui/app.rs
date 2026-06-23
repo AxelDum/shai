@@ -1,37 +1,34 @@
-use std::io::{self, stdin, stdout};
+use std::io::{self};
 use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
-use crossterm::{execute, cursor, ExecutableCommand};
-use futures::{future::FutureExt, select, StreamExt};
+use crossterm::terminal::{self, disable_raw_mode};
+use futures::{future::FutureExt, StreamExt};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::Text;
 use ratatui::Terminal;
-use shai_core::agent::{Agent, AgentRequest, AgentEvent, AgentController, PublicAgentState};
-use shai_core::agent::events::{PermissionRequest, PermissionResponse};
+use shai_core::agent::{Agent, AgentEvent, AgentController, PublicAgentState};
+use shai_core::agent::events::PermissionRequest;
 use shai_core::agent::output::PrettyFormatter;
 use shai_core::config::config::ShaiConfig;
 use shai_core::config::agent::AgentConfig;
 use shai_core::agent::builder::AgentBuilder;
-use shai_core::logging::LoggingConfig;
 use shai_core::runners::coder::coder::coder;
 use shai_core::tools::{ToolCall, ToolResult};
-use shai_llm::{LlmClient, ToolCallMethod};
+use shai_llm::ToolCallMethod;
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Layout},
     style::{Color, Style},
-    widgets::{Paragraph, Widget},
+    widgets::Widget,
     Frame, TerminalOptions, Viewport
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
-use tui_textarea::Input;
 use ansi_to_tui::IntoText;
 use std::collections::{HashMap, VecDeque};
 
@@ -41,6 +38,8 @@ use crate::tui::perm::PermissionWidget;
 use crate::tui::perm_alt_screen::AlternateScreenPermissionModal;
 use super::perm::PermissionModalAction;
 use super::theme::Theme;
+use super::statusbar::StatusBar;
+use super::history::ConversationHistory;
 
 
 pub enum AppModalState<'a> {
@@ -65,7 +64,8 @@ pub struct App<'a> {
 
     pub(crate) state: AppModalState<'a>,
     pub(crate) formatter: PrettyFormatter, // streaming log formatter
-    pub(crate) running_tools: HashMap<String, ToolCall>, // (request_id, request)
+    pub(crate) running_tools: HashMap<String, ToolCall>, // tool_call_id -> ToolCall
+    pub(crate) tool_start_times: HashMap<String, Instant>, // tool_call_id -> start time
     pub(crate) input: InputArea<'a>,       // input text
     pub(crate) commands: HashMap<(String, String),Vec<String>>,
     pub(crate) exit: bool,
@@ -75,6 +75,15 @@ pub struct App<'a> {
     pub(crate) total_output_tokens: u32,
     
     pub(crate) theme: Theme, // UI theme (dark/light)
+    pub(crate) status_bar: StatusBar,
+    pub(crate) history: ConversationHistory,
+
+    // Agent metadata for status bar
+    pub(crate) agent_model: String,
+    pub(crate) agent_provider: String,
+
+    // Session persistence
+    pub(crate) session_id: String,
 }
 
 
@@ -87,6 +96,10 @@ impl App<'_> {
             
             println!("\x1b[2m░ agent {} - {} on {}\x1b[0m", agent_name, config.llm_provider.model, config.llm_provider.provider);
             
+            // Store agent metadata for status bar
+            self.agent_model = config.llm_provider.model.clone();
+            self.agent_provider = config.llm_provider.provider.clone();
+            
             // Create agent from config
             let agent_builder = AgentBuilder::from_config(config).await?;
             Box::new(agent_builder.build())
@@ -94,6 +107,10 @@ impl App<'_> {
             // Use default coder agent
             let (llm, model) = ShaiConfig::get_llm().await?;
             println!("\x1b[2m░ {} on {}\x1b[0m", model, llm.provider().name());
+            
+            // Store agent metadata for status bar
+            self.agent_model = model.clone();
+            self.agent_provider = llm.provider().name().to_string();
             
             Box::new(coder(Arc::new(llm), model))
         };
@@ -130,25 +147,44 @@ impl App<'_> {
         // Update agent state
         if let AgentEvent::StatusChanged { new_status, .. } = &event {
             self.input.set_agent_running(!matches!(new_status, PublicAgentState::Paused));
+
+            // Save session to disk when agent pauses (finishes processing)
+            if matches!(new_status, PublicAgentState::Paused) {
+                if let Some(ref agent_ref) = self.agent {
+                    if let Ok(trace) = agent_ref.controller.get_trace().await {
+                        let sid = self.session_id.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = shai_core::session::SessionPersist::save_session(&sid, trace) {
+                                tracing::warn!("Failed to save session {}: {}", sid, e);
+                            }
+                        });
+                    }
+                }
+            }
         }
 
         // updated inprogress list
         if let AgentEvent::ToolCallStarted { call, .. }= &event {
             self.running_tools.insert(call.tool_call_id.clone(), call.clone());
+            self.tool_start_times.insert(call.tool_call_id.clone(), Instant::now());
         }
         if let AgentEvent::ToolCallCompleted { call, .. }= &event {
             self.running_tools.remove(&call.tool_call_id);
+            self.tool_start_times.remove(&call.tool_call_id);
         }
 
         // Format and display event
         if let Some(formatted) = self.formatter.format_event(&event) {
             if let Some(ref mut terminal) = self.terminal {
                 let wrapped = formatted.into_text().unwrap();
-                let line_count = wrapped.lines.iter().len() as u16;
+                let line_count = wrapped.lines.len() as u16;
                 terminal.clear()?; // this is to avoid visual artifact
                 terminal.insert_before(line_count, |buf| {
                     wrapped.render(buf.area, buf);
                 })?;
+
+                // Also add to conversation history
+                self.history.add_text(&formatted);
             }
         }
 
@@ -161,8 +197,23 @@ impl App<'_> {
         if let AgentEvent::TokenUsage { input_tokens, output_tokens } = &event {
             self.total_input_tokens += input_tokens;
             self.total_output_tokens += output_tokens;
+            self.status_bar.set_tokens(self.total_input_tokens, self.total_output_tokens);
         }
-        
+
+        // Handle error events - display inline in red
+        if let AgentEvent::Error { error } = &event {
+            let error_msg = format!("\x1b[31m❌ Error: {}\x1b[0m", error);
+            if let Some(ref mut terminal) = self.terminal {
+                let wrapped = error_msg.into_text().unwrap();
+                let line_count = wrapped.lines.len() as u16;
+                terminal.clear()?;
+                terminal.insert_before(line_count, |buf| {
+                    wrapped.render(buf.area, buf);
+                })?;
+                self.history.add_text(&error_msg);
+            }
+        }
+
         Ok(())
     }
 }
@@ -185,10 +236,16 @@ impl App<'_> {
             commands: Self::list_command(),
             exit: false,
             running_tools: HashMap::new(),
+            tool_start_times: HashMap::new(),
             permission_queue: VecDeque::new(),
             total_input_tokens: 0,
             total_output_tokens: 0,
             theme,
+            status_bar: StatusBar::new(theme),
+            history: ConversationHistory::new(),
+            agent_model: String::new(),
+            agent_provider: String::new(),
+            session_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 
@@ -311,7 +368,7 @@ impl App<'_> {
             PermissionModalAction::Response { request_id, choice } => {
                 // Send response to agent
                 if let Some(ref agent) = self.agent {     
-                    if matches!(choice, PermissionResponse::AllowAlways) {
+                    if matches!(choice, shai_core::agent::events::PermissionResponse::AllowAlways) {
                         let _ = agent.controller.sudo().await;
                     }        
                     match agent.controller.response_permission_request(request_id, choice).await {
@@ -401,9 +458,11 @@ impl App<'_> {
             AppModalState::InputShown => self.input.height(),
             AppModalState::PermissionModal { widget } => widget.height(),
         }.max(5);
+        
+        let running_tools_height = self.running_tools.len() as u16;
         let height = modal_height
         + 1 
-        + self.running_tools.len() as u16;
+        + running_tools_height;
 
         if let Some(ref mut terminal) = self.terminal {  
             if height != self.terminal_height {
@@ -414,15 +473,22 @@ impl App<'_> {
             terminal.draw(|frame| {                    
                 let [_, inprogress, modal] = Layout::vertical([
                     Constraint::Length(1), // padding
-                    Constraint::Length(self.running_tools.len() as u16 + 1), // running tool (if any)
+                    Constraint::Length(running_tools_height + 1), // running tool (if any)
                     Constraint::Length(modal_height)])                // input or modal
                     .areas(frame.area()); 
 
-                // draw running tool
+                // draw running tool with duration
                 if !self.running_tools.is_empty() {
                     let layout: std::rc::Rc<[Rect]> = Layout::vertical(vec![Constraint::Length(1); self.running_tools.len()+1]).split(inprogress);
-                    for ((_,tc), &area) in self.running_tools.iter().zip(layout.into_iter()) {
-                        frame.render_widget(self.formatter.format_tool_running(tc).into_text().unwrap(), area);
+                    for ((tool_id, tc), &area) in self.running_tools.iter().zip(layout.into_iter()) {
+                        let elapsed = self.tool_start_times.get(tool_id)
+                            .map(|t| t.elapsed())
+                            .unwrap_or_default();
+                        let secs = elapsed.as_secs();
+                        let millis = elapsed.subsec_millis() / 10;
+                        let tool_str = self.formatter.format_tool_running(tc);
+                        let tool_with_time = format!("{} ({:.1}s)", tool_str, secs as f64 + millis as f64 / 100.0);
+                        frame.render_widget(tool_with_time.into_text().unwrap(), area);
                     }
                 }
 
@@ -439,6 +505,4 @@ impl App<'_> {
         }
         Ok(())
     }
-
 }
-

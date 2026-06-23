@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::fs;
-use std::sync::OnceLock;
 
 use crate::tools::{AnyTool, ToolResult};
 
@@ -59,13 +58,49 @@ static CODER_PROMPT: &str = r#"{{CODER_GUIDELINE}}
 
 {{SHAI_PROMPT}}
 
-{{CODER_ENV}}"#;
+{{CODER_ENV}}
 
-static SHAI_PROMPT: &str = r#"
---- Begin SHAI.md (project explanations/instructions) ---
-{{SHAI}}
---- End SHAI.md ---
-"#;
+{{SKILLS}}"#;
+/// Load AGENTS.md from the git root (or CWD if not in a git repo).
+/// Returns empty string if not found or on error.
+fn load_agents_content() -> String {
+    let base = find_git_root().unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_default()
+    });
+    let agents_path = base.join("AGENTS.md");
+    match fs::read_to_string(&agents_path) {
+        Ok(content) => content,
+        Err(e) => {
+            if agents_path.exists() {
+                eprintln!("\x1b[2m⚠ Failed to read AGENTS.md: {}\\x1b[0m", e);
+            }
+            String::new()
+        }
+    }
+}
+
+/// Load SHAI.md from the git root (or CWD if not in a git repo).
+/// Returns empty string if not found or on error.
+fn load_shai_content() -> String {
+    let base = find_git_root().unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_default()
+    });
+    let shai_path = base.join("SHAI.md");
+    match fs::read_to_string(&shai_path) {
+        Ok(content) => {
+            if !content.is_empty() {
+                eprintln!("\x1b[2m⚠ SHAI.md is deprecated, please consider migrating to AGENTS.md\x1b[0m");
+            }
+            content
+        }
+        Err(e) => {
+            if shai_path.exists() {
+                eprintln!("\x1b[2m⚠ Failed to read SHAI.md: {}\x1b[0m", e);
+            }
+            String::new()
+        }
+    }
+}
 
 static CODER_PROMPT_GIT: &str = r#"
 <git>
@@ -147,16 +182,37 @@ pub fn render_system_prompt_template(template: &str) -> String {
     // Insert SHAI content if placeholder present (load once)
     // Also handle SHAI_PROMPT placeholder
     if result.contains("{{SHAI_PROMPT}}") {
-        static SHAI_CONTENT: OnceLock<String> = OnceLock::new();
-        let content = SHAI_CONTENT.get_or_init(|| fs::read_to_string("SHAI.md").unwrap_or_default());
+        let agents_content = load_agents_content();
+        let shai_content = load_shai_content();
 
-        if !content.is_empty() {
+        if !agents_content.is_empty() || !shai_content.is_empty() {
+            let mut combined = String::new();
+            if !agents_content.is_empty() {
+                combined.push_str("--- Begin AGENTS.md (project instructions) ---\n");
+                combined.push_str(&agents_content);
+                combined.push_str("\n--- End AGENTS.md ---\n");
+            }
+            if !shai_content.is_empty() {
+                if !combined.is_empty() {
+                    combined.push('\n');
+                }
+                combined.push_str("--- Begin SHAI.md (legacy override) ---\n");
+                combined.push_str(&shai_content);
+                combined.push_str("\n--- End SHAI.md ---");
+            }
             result = result
-                .replace("{{SHAI_PROMPT}}", SHAI_PROMPT)
-                .replace("{{SHAI}}", content);
+                .replace("{{SHAI_PROMPT}}", &combined)
+                .replace("{{SHAI}}", &shai_content);
         } else {
             result = result.replace("{{SHAI_PROMPT}}", "");
         }
+    }
+
+    // Inject skill catalog if placeholder present
+    if result.contains("{{SKILLS}}") {
+        let skills = crate::tools::skills::discovery::discover_skills();
+        let catalog = crate::tools::skills::discovery::format_skill_catalog(&skills);
+        result = result.replace("{{SKILLS}}", &catalog);
     }
 
     // Only get git info if individual git placeholders are used

@@ -1,5 +1,5 @@
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Get the current working directory
@@ -9,14 +9,9 @@ pub fn get_working_dir() -> String {
         .unwrap_or_else(|_| "Unknown".to_string())
 }
 
-/// Check if the current directory is a git repository
+/// Check if the current directory is inside a git repository
 pub fn is_git_repo() -> bool {
-    Path::new(".git").exists() || 
-    Command::new("git")
-        .args(&["rev-parse", "--git-dir"])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    find_git_root().is_some()
 }
 
 /// Get the platform (OS family)
@@ -153,6 +148,22 @@ pub fn get_git_log() -> String {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "No recent commits or not a git repository".to_string())
+}
+
+/// Walk up from the current directory to find the nearest `.git` directory.
+/// Returns the repository root path if found, otherwise `None`.
+pub fn find_git_root() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    let mut current: &Path = &cwd;
+    loop {
+        if current.join(".git").exists() {
+            return Some(current.to_path_buf());
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => return None,
+        }
+    }
 }
 
 /// Get all environment variable keys (not values for security)

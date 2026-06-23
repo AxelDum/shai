@@ -7,7 +7,7 @@ use openai_dive::v1::resources::chat::ChatMessage;
 
 use shai_core::agent::AgentBuilder;
 use crate::session::{log_event, logger::colored_session_id};
-use crate::session::persist::SessionPersist;
+use shai_core::session::SessionPersist;
 
 use super::AgentSession;
 

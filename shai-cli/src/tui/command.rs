@@ -7,15 +7,13 @@ use super::theme::Theme;
 impl App<'_> {
     pub(crate) fn list_command() -> HashMap<(String, String),Vec<String>> {
         HashMap::from([
-            (("/exit","exit from the tui"), vec![]),
-            (("/auth","select a provider"), vec![]),
-            (("/tc","set the tool call method: [fc | fc2 | so]"), vec!["method"]),
-            (("/tokens","display token usage (input/output)"), vec![]),
-            (("/theme","set theme: [dark | light | toggle]"), vec!["mode"]),
+            (("/exit".to_string(),"exit from the tui".to_string()), Vec::<String>::new()),
+            (("/auth".to_string(),"select a provider".to_string()), Vec::<String>::new()),
+            (("/tc".to_string(),"set the tool call method: [fc | fc2 | so]".to_string()), vec!["method".to_string()]),
+            (("/tokens".to_string(),"display token usage (input/output)".to_string()), Vec::<String>::new()),
+            (("/theme".to_string(),"set theme: [dark | light | toggle]".to_string()), vec!["mode".to_string()]),
+            (("/restore".to_string(),"restore a previous session".to_string()), Vec::<String>::new()),
         ])
-        .into_iter()
-        .map(|((cmd,desc),args)|((cmd.to_string(),desc.to_string()),args.into_iter().map(|s|s.to_string()).collect()))
-        .collect()
     }
 
     pub(crate) async fn handle_app_command(&mut self, command: &str) -> io::Result<()> {
@@ -93,6 +91,80 @@ impl App<'_> {
                     }
                     _ => {
                         self.input.alert_msg("Usage: /theme [dark|light|toggle]", Duration::from_secs(3));
+                    }
+                }
+            }
+            "/restore" => {
+                let sessions = shai_core::session::SessionPersist::list_sessions();
+                match sessions {
+                    Ok(sessions) if !sessions.is_empty() => {
+                        if let Some(arg) = args.into_iter().next() {
+                            // Try to match by index (1-based) or by session_id prefix
+                            let selected = arg.parse::<usize>()
+                                .ok()
+                                .and_then(|idx| {
+                                    if idx > 0 && idx <= sessions.len() {
+                                        Some(&sessions[idx - 1])
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .or_else(|| {
+                                    // Match by session_id prefix
+                                    sessions.iter().find(|s| s.session_id.starts_with(arg))
+                                });
+
+                            if let Some(session) = selected {
+                                self.input.alert_msg(&format!("Restoring session {}...", &session.session_id[..8]), Duration::from_secs(2));
+
+                                // Drop existing agent
+                                if let Some(agent) = self.agent.take() {
+                                    let _ = agent.controller.terminate().await;
+                                }
+
+                                // Update session_id and start new agent with restored trace
+                                self.session_id = session.session_id.clone();
+                                let agent_name = if self.agent_model.is_empty() { None } else { Some(self.agent_model.clone()) };
+                                self.start_agent(agent_name.as_deref()).await.map_err(|e| {
+                                    io::Error::other(format!("Failed to start agent: {}", e))
+                                })?;
+
+                                // Send the restored trace to the agent
+                                if let Some(ref agent) = self.agent {
+                                    let _ = agent.controller.send_trace(session.trace.clone()).await;
+                                }
+                                self.input.alert_msg(&format!("Session {} restored", &session.session_id[..8]), Duration::from_secs(2));
+                            } else {
+                                self.input.alert_msg("Invalid session number", Duration::from_secs(2));
+                            }
+                        } else {
+                            // List all sessions
+                            let mut msg = String::from("Saved sessions:\n");
+                            for (i, s) in sessions.iter().enumerate() {
+                                let preview = s.trace.first()
+                                    .map(|m| {
+                                        match m {
+                                            openai_dive::v1::resources::chat::ChatMessage::User { content, .. } => {
+                                                match content {
+                                                    openai_dive::v1::resources::chat::ChatMessageContent::Text(t) => t.chars().take(50).collect::<String>(),
+                                                    _ => "(multimedia)".to_string(),
+                                                }
+                                            }
+                                            _ => "(no user message)".to_string(),
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "(empty)".to_string());
+                                msg.push_str(&format!("  {} - {} ... ({})\n", i + 1, &s.session_id[..8], preview));
+                            }
+                            msg.push_str("\nUse /restore <number> to restore a session");
+                            self.input.alert_msg(&msg, Duration::from_secs(10));
+                        }
+                    }
+                    Ok(_) => {
+                        self.input.alert_msg("No saved sessions found", Duration::from_secs(2));
+                    }
+                    Err(e) => {
+                        self.input.alert_msg(&format!("Failed to list sessions: {}", e), Duration::from_secs(3));
                     }
                 }
             }

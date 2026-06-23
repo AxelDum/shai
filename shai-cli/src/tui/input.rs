@@ -139,24 +139,20 @@ impl InputArea<'_> {
 
     // Check if a path should be ignored based on gitignore patterns
     fn should_ignore(path: &str, patterns: &[String]) -> bool {
+        let path_clean = path.trim_start_matches("./");
         for pattern in patterns {
-            let pattern_clean = pattern.trim_start_matches("./");
-            
-            if path.contains(pattern_clean) {
+            let pattern_clean = pattern.trim_start_matches("./").trim_end_matches('/');
+
+            // Exact match or directory prefix match
+            if path_clean == pattern_clean || path_clean.starts_with(&format!("{}/", pattern_clean)) {
                 return true;
             }
-            
-            if pattern.ends_with('/') {
-                let dir_pattern = pattern.trim_end_matches('/');
-                if path.contains(dir_pattern) {
-                    return true;
-                }
-            }
-            
+
+            // Wildcard patterns (e.g. "*.log")
             if pattern.contains('*') {
                 let parts: Vec<&str> = pattern.split('*').collect();
                 if parts.len() == 2 {
-                    if path.contains(parts[0]) && path.ends_with(parts[1]) {
+                    if path_clean.starts_with(parts[0]) && path_clean.ends_with(parts[1]) {
                         return true;
                     }
                 }

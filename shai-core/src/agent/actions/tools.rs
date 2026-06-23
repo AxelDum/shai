@@ -28,6 +28,8 @@ impl AgentCore {
         let trace = self.trace.clone();
         let compaction_config = self.compaction_config.clone();
         let working_dir = self.working_dir.clone();
+        let command_cache = self.command_cache.clone();
+        let max_cached_commands = self.compaction_config.max_cached_commands;
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
@@ -44,6 +46,8 @@ impl AgentCore {
                 trace.clone(),
                 compaction_config.clone(),
                 working_dir.clone(),
+                command_cache.clone(),
+                max_cached_commands,
             );
             join_handles.push(handle);
         }
@@ -90,6 +94,8 @@ impl AgentCore {
         trace: Arc<RwLock<Vec<ChatMessage>>>,
         compaction_config: crate::config::agent::CompactionConfig,
         working_dir: Option<String>,
+        command_cache: Arc<RwLock<Vec<(String, String)>>>,
+        max_cached_commands: usize,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();
@@ -112,9 +118,6 @@ impl AgentCore {
                     false
                 }
 
-                // emit tool call
-                // execute tool
-                // emit tool result
                 Ok((tool, mut call)) => {
                     // Inject agent's working_dir as default for bash tool if not specified
                     if call.tool_name == "bash" {
@@ -134,33 +137,74 @@ impl AgentCore {
                             call: call.clone(), 
                         });
                     }
-                    
-                    // execute tool
-                    let tool_handle = Self::spawn_tool_exec(
-                        tool, call.clone(), 
-                        cancel_token.clone(), 
-                        claims, 
-                        public_event_tx.clone(), 
-                        internal_tx.subscribe());
 
-                    // wait for result (or for cancellation)
-                    let result: ToolResult = tokio::select! {
-                        join_result = tool_handle => {
-                            match join_result {
-                                Ok(tool_result) => tool_result,
-                                Err(join_error) => {
-                                    debug!(target: "agent::tool_completed", "tool execution task failed: {}", join_error);
-                                    ToolResult::error(format!("tool execution task failed: {}", join_error))
-                                }
-                            }
-                         },
-                        _ = cancel_token.cancelled() => {
-                            debug!(target: "agent::tool_completed", "cancelled by user");
-                            ToolResult::error("tool call was cancelled by the user".to_string())
-                        }
+                    // Normalize command for cache lookup (bash only)
+                    let normalized_command = if call.tool_name == "bash" {
+                        call.parameters.get("command")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+                    } else {
+                        None
                     };
 
-                    // let's first add tool result to trace
+                    // Check command cache
+                    let cached_output = if let Some(ref cmd) = normalized_command {
+                        let cache = command_cache.read().await;
+                        cache.iter().rev().find(|(c, _)| c == cmd).map(|(_, output)| output.clone())
+                    } else {
+                        None
+                    };
+
+                    // Execute or use cached result
+                    let result: ToolResult = if let Some(cached) = cached_output {
+                        ToolResult::success(format!(
+                            "[cached] You just ran this command. The result is the same.\n\n{}", cached
+                        ))
+                    } else {
+                        // execute tool
+                        let tool_handle = Self::spawn_tool_exec(
+                            tool, call.clone(), 
+                            cancel_token.clone(), 
+                            claims, 
+                            public_event_tx.clone(), 
+                            internal_tx.subscribe());
+
+                        // wait for result (or for cancellation)
+                        let exec_result = tokio::select! {
+                            join_result = tool_handle => {
+                                match join_result {
+                                    Ok(tool_result) => tool_result,
+                                    Err(join_error) => {
+                                        debug!(target: "agent::tool_completed", "tool execution task failed: {}", join_error);
+                                        ToolResult::error(format!("tool execution task failed: {}", join_error))
+                                    }
+                                }
+                            },
+                            _ = cancel_token.cancelled() => {
+                                debug!(target: "agent::tool_completed", "cancelled by user");
+                                ToolResult::error("tool call was cancelled by the user".to_string())
+                            }
+                        };
+
+                        // Cache the result if it was a bash command
+                        if let Some(ref cmd) = normalized_command {
+                            let compacted = compact_tool_result(
+                                &call.tool_name,
+                                exec_result.metadata(),
+                                &exec_result.to_string(),
+                                &compaction_config,
+                            );
+                            let mut cache = command_cache.write().await;
+                            cache.push((cmd.clone(), compacted));
+                            if cache.len() > max_cached_commands {
+                                cache.remove(0);
+                            }
+                        }
+
+                        exec_result
+                    };
+
+                    // Compact and push result to trace
                     let raw_output = result.to_string();
                     let compacted_output = compact_tool_result(
                         &call.tool_name,
@@ -188,7 +232,7 @@ impl AgentCore {
                         });   
                     }
 
-                    tool_was_denied                    
+                    tool_was_denied
                 }
             }
         })

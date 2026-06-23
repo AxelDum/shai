@@ -61,6 +61,12 @@ pub struct CompactionConfig {
     pub enabled: bool,
     #[serde(default = "default_max_output_chars")]
     pub max_output_chars: usize,
+    #[serde(default = "default_max_tool_calls_per_turn")]
+    pub max_tool_calls_per_turn: Option<usize>,
+    #[serde(default)]
+    pub max_cached_commands: usize,
+    #[serde(default = "default_max_trace_chars")]
+    pub max_trace_chars: usize,
 }
 
 impl Default for CompactionConfig {
@@ -68,6 +74,9 @@ impl Default for CompactionConfig {
         Self {
             enabled: true,
             max_output_chars: 8000,
+            max_tool_calls_per_turn: Some(30),
+            max_cached_commands: 50,
+            max_trace_chars: 50000,
         }
     }
 }
@@ -78,6 +87,14 @@ fn default_true() -> bool {
 
 fn default_max_output_chars() -> usize {
     8000
+}
+
+fn default_max_tool_calls_per_turn() -> Option<usize> {
+    Some(30)
+}
+
+fn default_max_trace_chars() -> usize {
+    50000
 }
 
 fn default_llm_provider() -> AgentProviderConfig {

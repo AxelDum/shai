@@ -12,6 +12,7 @@ use shai_llm::tool::LlmToolCall;
 use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, MultiEditTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
 
 use super::prompt::{render_system_prompt_template, get_todo_read};
+use crate::runners::compacter::compact_trace_if_needed;
 
 #[derive(Clone)]
 pub struct CoderBrain {
@@ -48,6 +49,11 @@ impl CoderBrain {
 impl Brain for CoderBrain {
     async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
         let mut trace = context.trace.read().await.clone();
+
+        // Apply session-level trace compaction if needed
+        if context.max_trace_chars > 0 {
+            compact_trace_if_needed(&mut trace, context.max_trace_chars);
+        }
 
         // Render the user's system prompt template
         let mut system_prompt = render_system_prompt_template(&self.system_prompt_template);

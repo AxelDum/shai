@@ -262,29 +262,116 @@ impl LlmClient {
 
 /// Higher level chat client
 impl LlmClient {
+    /// Default maximum number of retry attempts for transient errors.
+    const DEFAULT_MAX_RETRIES: usize = 3;
+    /// Base delay in milliseconds for exponential backoff.
+    const RETRY_BASE_DELAY_MS: u64 = 1000;
+
+    /// Returns true if the error is likely transient and worth retrying.
+    /// This covers network errors, 5xx server errors, and deserialization
+    /// errors such as "missing field choices" which occur when a provider
+    /// returns an unexpected error body.
+    fn is_retryable_error(error: &LlmError) -> bool {
+        let msg = error.to_string().to_lowercase();
+
+        // Deserialization errors (e.g. "missing field `choices`")
+        if msg.contains("missing field") {
+            return true;
+        }
+
+        // Network / connection errors
+        if msg.contains("connection") || msg.contains("timeout") || msg.contains("timed out") {
+            return true;
+        }
+
+        // HTTP status codes in the 5xx range
+        if msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504") {
+            return true;
+        }
+
+        // Generic server error messages
+        if msg.contains("internal server error") || msg.contains("bad gateway")
+            || msg.contains("service unavailable") || msg.contains("gateway timeout") {
+            return true;
+        }
+
+        false
+    }
+
     pub async fn chat(&self, request: ChatCompletionParameters) -> Result<ChatCompletionResponse, LlmError> {
-        let request = request
-            .fix_mistral_alternating();
+        let request = request.fix_mistral_alternating();
 
-        let response = self.provider
-            .chat(request.clone())
-            .await
-            .inspect_err(|error| {
-                crate::logging::log_llm_error(&request, error, self.provider_name());
-            })?
-            .extract_think_content();
+        let max_retries = Self::max_retries_from_env();
+        let mut last_error: Option<LlmError> = None;
 
-        Ok(response)
+        for attempt in 0..=max_retries {
+            match self.provider.chat(request.clone()).await {
+                Ok(response) => return Ok(response.extract_think_content()),
+                Err(error) => {
+                    crate::logging::log_llm_error(&request, &error, self.provider_name());
+
+                    if attempt < max_retries && Self::is_retryable_error(&error) {
+                        let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
+                        eprintln!(
+                            "[shai] LLM request failed (attempt {}/{}), retrying in {}ms: {}",
+                            attempt + 1,
+                            max_retries,
+                            delay_ms,
+                            error
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                        last_error = Some(error);
+                        continue;
+                    }
+
+                    return Err(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "unknown error".into()))
     }
 
     pub async fn chat_stream(&self, request: ChatCompletionParameters) -> Result<LlmStream, LlmError> {
-        let request = request
-            .fix_mistral_alternating();
+        let request = request.fix_mistral_alternating();
 
-        self.provider.chat_stream(request).await
+        let max_retries = Self::max_retries_from_env();
+        let mut last_error: Option<LlmError> = None;
+
+        for attempt in 0..=max_retries {
+            match self.provider.chat_stream(request.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => {
+                    if attempt < max_retries && Self::is_retryable_error(&error) {
+                        let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
+                        eprintln!(
+                            "[shai] LLM stream request failed (attempt {}/{}), retrying in {}ms: {}",
+                            attempt + 1,
+                            max_retries,
+                            delay_ms,
+                            error
+                        );
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                        last_error = Some(error);
+                        continue;
+                    }
+
+                    return Err(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "unknown error".into()))
     }
 
-
+    /// Read the max retries override from the `SHAI_LLM_MAX_RETRIES` env var.
+    /// Falls back to [`DEFAULT_MAX_RETRIES`].
+    fn max_retries_from_env() -> usize {
+        std::env::var("SHAI_LLM_MAX_RETRIES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(Self::DEFAULT_MAX_RETRIES)
+    }
 }
 
 pub trait ExtractThinkContent {

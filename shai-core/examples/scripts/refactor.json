@@ -1,0 +1,10 @@
+{
+  "setup": "curl -sL https://github.com/ovh/shai/archive/refs/tags/v0.1.10.tar.gz | tar xz -C . && cd shai-0.1.10/shai-core",
+  "goal": "Read src/agent/brain.rs and summarize its structure and key types",
+  "prompts": [
+    "Propose changes to add a new field called 'metadata' to the ThinkerDecision struct that holds an optional HashMap<String, String>",
+    "Apply the proposed changes to the brain.rs file",
+    "Run cargo check to verify the changes compile correctly",
+    "Fix any compilation errors that arise"
+  ]
+}

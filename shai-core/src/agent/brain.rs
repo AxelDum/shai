@@ -28,7 +28,7 @@ pub enum ThinkerFlowControl {
 pub struct ThinkerDecision {
     pub message: ChatMessage,
     pub flow: ThinkerFlowControl,
-    pub token_usage: Option<(u32, u32)>, // (input_tokens, output_tokens)
+    pub token_usage: Option<(u32, u32, u32)>, // (input_tokens, output_tokens, cached_tokens)
 }
 
 impl ThinkerDecision {
@@ -60,11 +60,12 @@ impl ThinkerDecision {
         message: ChatMessage,
         input_tokens: u32,
         output_tokens: u32,
+        cached_tokens: u32,
     ) -> Self {
         ThinkerDecision {
             message,
             flow: ThinkerFlowControl::AgentContinue,
-            token_usage: Some((input_tokens, output_tokens)),
+            token_usage: Some((input_tokens, output_tokens, cached_tokens)),
         }
     }
 
@@ -72,11 +73,12 @@ impl ThinkerDecision {
         message: ChatMessage,
         input_tokens: u32,
         output_tokens: u32,
+        cached_tokens: u32,
     ) -> Self {
         ThinkerDecision {
             message,
             flow: ThinkerFlowControl::AgentPause,
-            token_usage: Some((input_tokens, output_tokens)),
+            token_usage: Some((input_tokens, output_tokens, cached_tokens)),
         }
     }
 

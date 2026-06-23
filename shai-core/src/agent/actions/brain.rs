@@ -88,13 +88,12 @@ impl AgentCore {
             .await;
 
         // Emit token usage event if available
-        if let Some((input_tokens, output_tokens)) = token_usage {
-            let _ = self
-                .emit_event(AgentEvent::TokenUsage {
-                    input_tokens,
-                    output_tokens,
-                })
-                .await;
+        if let Some((input_tokens, output_tokens, cached_tokens)) = token_usage {
+            let _ = self.emit_event(AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+                cached_tokens,
+            }).await;
         }
 
         // run tool call if any

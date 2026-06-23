@@ -91,11 +91,11 @@ impl StatusBar {
         spans.push(Span::raw(spacer));
         spans.push(Span::styled(
             state_str,
-            Style::default().fg(Color::Black).bg(Color::DarkGray),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
         ));
         spans.push(Span::styled(
             token_str,
-            Style::default().fg(Color::Black).bg(Color::DarkGray),
+            Style::default().fg(Color::White).bg(Color::DarkGray),
         ));
 
         let line = Line::from(spans);

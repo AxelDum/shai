@@ -122,6 +122,11 @@ impl App<'_> {
                                     let _ = agent.controller.terminate().await;
                                 }
 
+                                // Render the restored trace into the TUI before starting the agent,
+                                // since start_agent() prints to stdout which would mess up the
+                                // terminal's internal viewport state.
+                                self.render_restored_trace(&session.trace);
+
                                 // Update session_id and start new agent with restored trace
                                 self.session_id = session.session_id.clone();
                                 let agent_name = if self.agent_model.is_empty() { None } else { Some(self.agent_model.clone()) };
@@ -133,6 +138,7 @@ impl App<'_> {
                                 if let Some(ref agent) = self.agent {
                                     let _ = agent.controller.send_trace(session.trace.clone()).await;
                                 }
+
                                 self.input.alert_msg(&format!("Session {} restored", &session.session_id[..8]), Duration::from_secs(2));
                             } else {
                                 self.input.alert_msg("Invalid session number", Duration::from_secs(2));

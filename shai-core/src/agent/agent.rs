@@ -1,48 +1,49 @@
-use crate::agent::ClaimManager;
-use crate::tools::AnyTool;
-use async_trait::async_trait;
-use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
-use serde::{Deserialize, Serialize};
-use shai_llm::ToolCallMethod;
-use std::boxed::Box;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
+use std::boxed::Box;
+use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
+use shai_llm::ToolCallMethod;
+use tokio::sync::{mpsc, broadcast, RwLock, oneshot};
+use serde::{Serialize, Deserialize};
+use async_trait::async_trait;
+use crate::tools::AnyTool;
+use crate::agent::ClaimManager;
 
 // Helper functions to make the main loop more readable
 
-use crate::agent::AgentError;
-use crate::agent::InternalAgentState;
-use crate::agent::{AgentEvent, AgentRequest};
 use crate::agent::{Brain, InternalAgentEvent};
+use crate::agent::AgentError;
+use crate::agent::{AgentRequest, AgentEvent};
+use crate::agent::InternalAgentState;
 use tracing::debug;
 
 use super::protocol::{AgentController, SentCommand};
-use super::{AgentEventHandler, AgentResponse};
+use super::{AgentResponse, AgentEventHandler};
 use crate::config::agent::CompactionConfig;
 
 /// Trait defining the public interface for agents
 #[async_trait]
-pub trait Agent: Send + Sync {
+pub trait Agent: Send + Sync {    
     /// Start the agent execution (blocking until completion)
     async fn run(&mut self) -> Result<AgentResult, AgentError>;
-
+    
     /// Get a controller to send commands to the agent
     fn controller(&mut self) -> AgentController;
-
+    
     /// Get an event watcher to subscribe to agent events
     fn watch(&mut self) -> broadcast::Receiver<AgentEvent>;
-
+    
     /// Register an event handler closure
-    fn on_event<F>(self, handler: F) -> Self
-    where
+    fn on_event<F>(self, handler: F) -> Self 
+    where 
         F: Fn(AgentEvent) + Send + Sync + 'static,
         Self: Sized;
-
+        
     /// Register an event handler that implements AgentEventHandler
     fn with_event_handler<H>(self, handler: H) -> Self
-    where
+    where 
         H: AgentEventHandler + 'static,
         Self: Sized;
+    
 }
 
 /// Result of a completed agent
@@ -50,7 +51,7 @@ pub trait Agent: Send + Sync {
 pub struct AgentResult {
     pub success: bool,
     pub message: String,
-    pub trace: Vec<ChatMessage>,
+    pub trace:   Vec<ChatMessage>,
 }
 
 /// Core agent implementation that orchestrates any Thinker implementation
@@ -59,29 +60,36 @@ pub struct AgentCore {
 
     /// public controler and event watcher
     pub socket: AgentSocket,
-
+    
     /// big brain
     pub brain: Arc<RwLock<Box<dyn Brain>>>,
     pub method: ToolCallMethod,
 
     /// agent state (manipulated by main looper + brain/tool coroutines)
-    pub trace: Arc<RwLock<Vec<ChatMessage>>>,
+    pub trace:           Arc<RwLock<Vec<ChatMessage>>>,
     pub available_tools: Vec<Arc<dyn AnyTool>>,
-    pub permissions: Arc<RwLock<ClaimManager>>,
-    pub state: InternalAgentState,
+    pub permissions:     Arc<RwLock<ClaimManager>>,
+    pub state:           InternalAgentState,
     pub compaction_config: CompactionConfig,
     pub working_dir: Option<String>,
 
+    /// Tracks tool calls since last user input for max_tool_calls_per_turn limit
+    pub tool_call_count: Arc<RwLock<usize>>,
+
+    /// Cache of recently executed bash commands for duplicate detection
+    /// Each entry is (normalized_command, compacted_output)
+    pub command_cache: Arc<RwLock<Vec<(String, String)>>>,
+
     /// internal event
-    pub internal_tx: broadcast::Sender<InternalAgentEvent>, // event may be produced from many part of the agent
+    pub internal_tx: broadcast::Sender<InternalAgentEvent>,   // event may be produced from many part of the agent
     pub internal_rx: broadcast::Receiver<InternalAgentEvent>, // events are mostly consumed by the main event loop, but also in spawn tool to monitor permissions
 }
 
 pub struct AgentSocket {
-    pub tx_command: Option<mpsc::UnboundedSender<SentCommand>>, // might have multiple commander
-    pub rx_command: Option<mpsc::UnboundedReceiver<SentCommand>>, // self is single consumer of command from main agent loop
-    pub tx_event: Option<broadcast::Sender<AgentEvent>>, // multiple producer of event from multiple thread within self
-    pub rx_event: Option<broadcast::Receiver<AgentEvent>>, // multiple event watcher
+    pub tx_command:    Option<mpsc::UnboundedSender<SentCommand>>,   // might have multiple commander
+    pub rx_command:    Option<mpsc::UnboundedReceiver<SentCommand>>, // self is single consumer of command from main agent loop
+    pub tx_event:      Option<broadcast::Sender<AgentEvent>>,        // multiple producer of event from multiple thread within self
+    pub rx_event:      Option<broadcast::Receiver<AgentEvent>>,      // multiple event watcher
 }
 
 impl AgentCore {
@@ -97,7 +105,7 @@ impl AgentCore {
         let (internal_tx, internal_rx) = broadcast::channel(1024);
         Self {
             session_id: session_id.clone(),
-            socket: AgentSocket {
+            socket: AgentSocket{
                 tx_command: None,
                 rx_command: None,
                 tx_event: None,
@@ -106,14 +114,13 @@ impl AgentCore {
             brain: Arc::new(RwLock::new(brain)),
             method: ToolCallMethod::FunctionCall,
             trace: Arc::new(RwLock::new(trace)),
-            available_tools: available_tools
-                .into_iter()
-                .map(|t| Arc::from(t) as Arc<dyn AnyTool>)
-                .collect(),
+            available_tools: available_tools.into_iter().map(|t| Arc::from(t) as Arc<dyn AnyTool>).collect(),
             permissions: Arc::new(RwLock::new(permissions)),
             state: InternalAgentState::Starting,
             compaction_config,
             working_dir,
+            tool_call_count: Arc::new(RwLock::new(0)),
+            command_cache: Arc::new(RwLock::new(Vec::new())),
             internal_tx,
             internal_rx,
         }
@@ -138,38 +145,40 @@ impl AgentCore {
     }
 }
 
+
 #[async_trait]
 impl Agent for AgentCore {
     /// Start the agent execution (blocking until completion)
     async fn run(&mut self) -> Result<AgentResult, AgentError> {
         self.start().await
     }
-
+    
     /// Get a controller to send commands to the agent
     fn controller(&mut self) -> AgentController {
         self.controller()
     }
-
+    
     /// Get an event watcher to subscribe to agent events
     fn watch(&mut self) -> broadcast::Receiver<AgentEvent> {
         self.watch()
     }
-
+    
     /// Register an event handler closure
-    fn on_event<F>(self, handler: F) -> Self
-    where
-        F: Fn(AgentEvent) + Send + Sync + 'static,
+    fn on_event<F>(self, handler: F) -> Self 
+    where 
+        F: Fn(AgentEvent) + Send + Sync + 'static
     {
         self.on_event(handler)
     }
-
+    
     /// Register an event handler that implements AgentEventHandler
     fn with_event_handler<H>(self, handler: H) -> Self
-    where
-        H: AgentEventHandler + 'static,
+    where 
+        H: AgentEventHandler + 'static
     {
         self.with_event_handler(handler)
     }
+    
 }
 
 impl AgentCore {
@@ -181,7 +190,7 @@ impl AgentCore {
             self.socket.rx_command = Some(rx_command);
         }
         AgentController {
-            txcmd: self.socket.tx_command.as_ref().unwrap().clone(),
+            txcmd: self.socket.tx_command.as_ref().unwrap().clone()
         }
     }
 
@@ -194,18 +203,18 @@ impl AgentCore {
     }
 
     /// Get a new event channel
-    pub fn watch(&mut self) -> broadcast::Receiver<AgentEvent> {
+    pub fn watch(&mut self) ->  broadcast::Receiver<AgentEvent> {
         self.assert_socket_created();
         self.socket.tx_event.as_ref().unwrap().subscribe()
     }
 
     /// Register an anonymous closure to process event
-    pub fn on_event<F>(mut self, handler: F) -> Self
-    where
-        F: Fn(AgentEvent) + Send + Sync + 'static,
+    pub fn on_event<F>(mut self, handler: F) -> Self 
+    where 
+        F: Fn(AgentEvent) + Send + Sync + 'static
     {
         self.assert_socket_created();
-        let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
+        let mut rx =  self.socket.tx_event.as_ref().unwrap().subscribe();
         _ = tokio::spawn(async move {
             while let Ok(e) = rx.recv().await {
                 handler(e);
@@ -216,8 +225,8 @@ impl AgentCore {
 
     /// Register an event handler that implements AgentEventHandler
     pub fn with_event_handler<H>(mut self, handler: H) -> Self
-    where
-        H: AgentEventHandler + 'static,
+    where 
+        H: AgentEventHandler + 'static
     {
         self.assert_socket_created();
         let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
@@ -229,18 +238,19 @@ impl AgentCore {
         self
     }
 
+
     /// Handle WaitTurn command by spawning a task that waits for Paused state
     async fn handle_wait_turn(&mut self, response_channel: oneshot::Sender<AgentResponse>) {
         self.assert_socket_created();
         let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
         let current_state = self.state.to_public();
-
+        
         // Check if already paused
         if matches!(current_state, super::states::PublicAgentState::Paused) {
             let _ = response_channel.send(AgentResponse::Ack);
             return;
         }
-
+        
         tokio::spawn(async move {
             let response = loop {
                 match rx.recv().await {
@@ -249,48 +259,45 @@ impl AgentCore {
                             break AgentResponse::Ack;
                         }
                         // If agent completed, failed, or was cancelled, it won't reach Paused
-                        if matches!(
-                            new_status,
-                            super::states::PublicAgentState::Completed { .. }
-                                | super::states::PublicAgentState::Failed { .. }
-                                | super::states::PublicAgentState::Cancelled
+                        if matches!(new_status, 
+                            super::states::PublicAgentState::Completed { .. } |
+                            super::states::PublicAgentState::Failed { .. } |
+                            super::states::PublicAgentState::Cancelled
                         ) {
-                            break AgentResponse::Error {
-                                error: "Agent finished before reaching Paused state".to_string(),
+                            break AgentResponse::Error { 
+                                error: "Agent finished before reaching Paused state".to_string() 
                             };
                         }
                     }
                     Err(_) => {
-                        break AgentResponse::Error {
-                            error: "Event channel closed".to_string(),
+                        break AgentResponse::Error { 
+                            error: "Event channel closed".to_string() 
                         };
                     }
                     _ => {} // Ignore other events
                 }
             };
-
+            
             let _ = response_channel.send(response);
         });
     }
 
-    /// Returns true if there's a controller
+    /// Returns true if there's a controller 
     pub fn has_io(&self) -> bool {
         match &self.socket.rx_command {
             Some(rx) => !rx.is_closed(),
             None => false,
         }
     }
-
+    
     /// Main execution loop with single command receiver
     async fn start(&mut self) -> Result<AgentResult, AgentError> {
-        self.handle_event(InternalAgentEvent::AgentInitialized)
-            .await?;
-
+        self.handle_event(InternalAgentEvent::AgentInitialized).await?;
+        
         loop {
             if matches!(self.state, InternalAgentState::Paused) && !self.has_io() {
                 debug!(target: "agent::loop", "state is paused but has no more controller, moving to completion");
-                self.set_state(InternalAgentState::Completed { success: true })
-                    .await;
+                self.set_state(InternalAgentState::Completed { success: true }).await;
             }
 
             // Handle terminal states - exit immediately
@@ -300,28 +307,28 @@ impl AgentCore {
                     let trace = self.trace.clone();
                     let guard = trace.read().await;
                     return Ok(AgentResult {
-                        success: *success,
+                        success: success.clone(),
                         message: "Agent completed".to_string(),
                         trace: guard.clone(),
                     });
-                }
+                },
                 InternalAgentState::Failed { error } => {
                     debug!(target: "agent::terminated", "failed");
                     return Err(AgentError::ExecutionError(error.clone()));
-                }
+                },
                 _ => {}
             }
-
+            
             // Special handling for Running state - check for commands but don't automatically start thinking
             if matches!(self.state, InternalAgentState::Running) {
-                // Check for pending commands (non-blocking)
+                // Check for pending commands (non-blocking)                
                 if let Some(ref mut rx_command) = self.socket.rx_command {
                     if let Ok(command) = rx_command.try_recv() {
                         _ = self.handle_command(command).await;
-                        continue;
+                        continue
                     }
                 }
-
+                
                 // If no commands and running, start thinking
                 if matches!(self.state, InternalAgentState::Running) {
                     _ = self.handle_event(InternalAgentEvent::ThinkingStart).await;
@@ -344,10 +351,10 @@ impl AgentCore {
                 } => {
                     if let Some(command) = command_result {
                         _ = self.handle_command(command).await;
-                    }
+                    } 
                     // if channel is closed it means there's no more controller, we ignore silently.
                 }
-
+            
                 // always listen to internal events
                 internal_event = self.internal_rx.recv() => {
                     if let Ok(event) = internal_event {
@@ -363,10 +370,7 @@ impl AgentCore {
     /// Handle a command
     async fn handle_command(&mut self, command: SentCommand) -> Result<(), AgentError> {
         debug!(target: "agent::command", event = ?command);
-        let SentCommand {
-            command,
-            backchannel,
-        } = command;
+        let SentCommand{command, backchannel} = command;
 
         let res = match command {
             AgentRequest::Droping => {
@@ -376,9 +380,9 @@ impl AgentCore {
                 }
                 Ok(AgentResponse::Ack)
             }
-            AgentRequest::GetState => Ok(AgentResponse::State {
-                state: self.state.to_public(),
-            }),
+            AgentRequest::GetState => {
+                Ok(AgentResponse::State { state: self.state.to_public()})
+            }
             AgentRequest::GetTrace => {
                 let trace = self.trace.read().await.clone();
                 Ok(AgentResponse::Trace { trace })
@@ -393,60 +397,58 @@ impl AgentCore {
                 let enabled = guard.is_sudo();
                 Ok(AgentResponse::SudoStatus { enabled })
             }
-            AgentRequest::Terminate => {
-                self.handle_event(InternalAgentEvent::CancelTask)
-                    .await
-                    .and({
-                        self.set_state(InternalAgentState::Completed { success: false })
-                            .await;
-                        Ok(AgentResponse::Ack)
-                    })
+            AgentRequest::Terminate=> {
+                self.handle_event(InternalAgentEvent::CancelTask).await
+                .and({
+                    self.set_state(InternalAgentState::Completed { success: false }).await;
+                    Ok(AgentResponse::Ack)
+                })
             }
-            AgentRequest::StopCurrentTask => self
-                .handle_event(InternalAgentEvent::CancelTask)
-                .await
+            AgentRequest::StopCurrentTask => {
+                self.handle_event(InternalAgentEvent::CancelTask).await
                 .and({
                     self.set_state(InternalAgentState::Paused).await;
                     Ok(AgentResponse::Ack)
-                }),
-            AgentRequest::SwitchToolCallMethod { method } => {
-                if let Some(method) = method {
-                    self.method = method;
-                }
-                Ok(AgentResponse::Method {
-                    method: self.method,
                 })
             }
-            AgentRequest::SendUserInput { input } => {
-                self.handle_event(InternalAgentEvent::CancelTask)
-                    .await
-                    .and({
-                        // Emit UserInput event
-                        let _ = self
-                            .emit_event(AgentEvent::UserInput {
-                                input: input.clone(),
-                            })
-                            .await;
-
-                        self.trace.write().await.push(ChatMessage::User {
-                            content: ChatMessageContent::Text(input),
-                            name: None,
-                        });
-
-                        self.set_state(InternalAgentState::Running).await;
-                        Ok(AgentResponse::Ack)
-                    })
+            AgentRequest::SwitchToolCallMethod { method } => {
+                if let Some(method) = method {
+                    self.method = method;   
+                }
+                Ok(AgentResponse::Method { method: self.method })
             }
-            AgentRequest::SendTrace { messages } => {
-                self.handle_event(InternalAgentEvent::CancelTask)
-                    .await
-                    .and({
-                        // Add all messages to trace at once
-                        self.trace.write().await.extend(messages);
+            AgentRequest::SendUserInput{ input } => {
+                self.handle_event(InternalAgentEvent::CancelTask).await
+                .and({
+                    // Emit UserInput event
+                    let _ = self.emit_event(AgentEvent::UserInput {
+                        input: input.clone()
+                    }).await;
 
-                        self.set_state(InternalAgentState::Running).await;
-                        Ok(AgentResponse::Ack)
-                    })
+                    self.trace.write().await.push(ChatMessage::User {
+                        content: ChatMessageContent::Text(input),
+                        name: None
+                    });
+
+                    // Reset tool call counter for the new turn
+                    *self.tool_call_count.write().await = 0;
+
+                    self.set_state(InternalAgentState::Running).await;
+                    Ok(AgentResponse::Ack)
+                })
+            }
+            AgentRequest::SendTrace{ messages } => {
+                self.handle_event(InternalAgentEvent::CancelTask).await
+                .and({
+                    // Add all messages to trace at once
+                    self.trace.write().await.extend(messages);
+
+                    // Reset tool call counter for the new turn
+                    *self.tool_call_count.write().await = 0;
+
+                    self.set_state(InternalAgentState::Running).await;
+                    Ok(AgentResponse::Ack)
+                })
             }
             AgentRequest::LoadTrace { messages } => {
                 self.handle_event(InternalAgentEvent::CancelTask)
@@ -459,64 +461,58 @@ impl AgentCore {
                         Ok(AgentResponse::Ack)
                     })
             }
-            AgentRequest::UserQueryResponse {
-                request_id: query_id,
-                response,
-            } => {
+            AgentRequest::UserQueryResponse{ request_id: query_id, response } => {
                 // This event is managed by the spawn thread directly, thus sending to the broadcast internal event channel
-                let _ = self
-                    .internal_tx
-                    .send(InternalAgentEvent::UserResponseReceived {
-                        request_id: query_id,
-                        response,
-                    })
-                    .map_err(|_| AgentError::SessionClosed)?;
+                let _ = self.internal_tx.send(InternalAgentEvent::UserResponseReceived{
+                    request_id: query_id,
+                    response: response
+                }).map_err(|_| AgentError::SessionClosed)?;
                 Ok(AgentResponse::Ack)
             }
-            AgentRequest::UserPermissionResponse {
-                request_id,
-                response,
-            } => {
+            AgentRequest::UserPermissionResponse{ request_id, response } => {
                 // This event is managed by the spawn thread directly, thus sending to the broadcast internal event channel
-                let _ = self
-                    .internal_tx
-                    .send(InternalAgentEvent::PermissionResponseReceived {
-                        request_id,
-                        response,
-                    })
-                    .map_err(|_| AgentError::SessionClosed)?;
+                let _ = self.internal_tx.send(InternalAgentEvent::PermissionResponseReceived {
+                    request_id: request_id,
+                    response: response
+                }).map_err(|_| AgentError::SessionClosed)?;
                 Ok(AgentResponse::Ack)
             }
             AgentRequest::WaitTurn => {
                 self.handle_wait_turn(backchannel).await;
                 return Ok(()); // We handle the response in the spawned task
-            }
-        }
-        .unwrap_or_else(|e| AgentResponse::Error {
-            error: e.to_string(),
-        });
+            } 
+        }.unwrap_or_else(|e| AgentResponse::Error { error: e.to_string() });
 
         // ignore if channel is closed
         let _ = backchannel.send(res);
         Ok(())
     }
 
+
     /// Handle an event
     async fn handle_event(&mut self, event: InternalAgentEvent) -> Result<(), AgentError> {
         debug!(target: "agent::internal_event", event = ?event);
         match self.state {
-            InternalAgentState::Starting => self.state_starting_handle_event(event).await,
-            InternalAgentState::Running => self.state_running_handle_event(event).await,
+            InternalAgentState::Starting => {
+                self.state_starting_handle_event(event).await
+            }
+            InternalAgentState::Running => {
+                self.state_running_handle_event(event).await
+            }
             InternalAgentState::Processing { .. } => {
                 self.state_processing_handle_event(event).await
             }
-            InternalAgentState::Paused => self.state_pause_handle_event(event).await,
-            _ => self.state_terminal_handle_event(event).await,
+            InternalAgentState::Paused => {
+                self.state_pause_handle_event(event).await
+            }
+            _ => {
+                self.state_terminal_handle_event(event).await
+            }
         }
     }
-
+    
     /// Set agent status and emit event
-    pub async fn set_state(&mut self, to_state: InternalAgentState) {
+    pub async fn set_state(&mut self, to_state: InternalAgentState) { 
         let old_state = self.state.to_public();
         let new_state = to_state.to_public();
 
@@ -524,27 +520,25 @@ impl AgentCore {
             target: "agent::status",
             "{:?} <<--- {:?}", new_state, old_state
         );
-
+        
         // Emit event
-        let _ = self
-            .emit_event(AgentEvent::StatusChanged {
-                old_status: old_state,
-                new_status: new_state,
-            })
-            .await;
-
+        let _ = self.emit_event(AgentEvent::StatusChanged {
+            old_status: old_state,
+            new_status: new_state,
+        }).await;
+        
         self.state = to_state;
     }
-
+    
     /// Emit an event to the controller
     pub async fn emit_event(&self, event: AgentEvent) -> Result<(), AgentError> {
         // ignore if no receiver or if all receiver are dropped
         if let Some(tx) = &self.socket.tx_event {
             debug!(target: "agent::public_event", event = ?event);
-            let _ = tx.send(event).map_err(|_| AgentError::SessionClosed)?;
+            let _ = tx.send(event).map_err(|_| AgentError::SessionClosed)?;   
         }
         Ok(())
-    }
+    }    
 }
 
 /// Response from a completed task agent

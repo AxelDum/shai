@@ -1,24 +1,26 @@
+use std::sync::Arc;
 use async_trait::async_trait;
 use openai_dive::v1::resources::chat::ChatMessage;
 use shai_llm::ToolCallMethod;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::error::AgentError;
 use crate::tools::types::AnyToolBox;
+use super::error::AgentError;
+
 
 /// ThinkerContext is the agent internal state
 pub struct ThinkerContext {
-    pub trace: Arc<RwLock<Vec<ChatMessage>>>,
+    pub trace:           Arc<RwLock<Vec<ChatMessage>>>,
     pub available_tools: AnyToolBox,
-    pub method: ToolCallMethod,
+    pub method:          ToolCallMethod,
+    pub max_trace_chars: usize,
 }
 
 /// ThinkerFlowControl drives the agentic flow
 #[derive(Debug, Clone)]
 pub enum ThinkerFlowControl {
     AgentContinue,
-    AgentPause,
+    AgentPause
 }
 
 /// This structure pilot the flow of the Agent
@@ -27,13 +29,13 @@ pub enum ThinkerFlowControl {
 #[derive(Debug, Clone)]
 pub struct ThinkerDecision {
     pub message: ChatMessage,
-    pub flow: ThinkerFlowControl,
+    pub flow:    ThinkerFlowControl,
     pub token_usage: Option<(u32, u32, u32)>, // (input_tokens, output_tokens, cached_tokens)
 }
 
 impl ThinkerDecision {
     pub fn new(message: ChatMessage) -> Self {
-        ThinkerDecision {
+        ThinkerDecision{
             message,
             flow: ThinkerFlowControl::AgentPause,
             token_usage: None,
@@ -41,7 +43,7 @@ impl ThinkerDecision {
     }
 
     pub fn agent_continue(message: ChatMessage) -> Self {
-        ThinkerDecision {
+        ThinkerDecision{
             message,
             flow: ThinkerFlowControl::AgentContinue,
             token_usage: None,
@@ -49,33 +51,23 @@ impl ThinkerDecision {
     }
 
     pub fn agent_pause(message: ChatMessage) -> Self {
-        ThinkerDecision {
+        ThinkerDecision{
             message,
             flow: ThinkerFlowControl::AgentPause,
             token_usage: None,
         }
     }
 
-    pub fn agent_continue_with_tokens(
-        message: ChatMessage,
-        input_tokens: u32,
-        output_tokens: u32,
-        cached_tokens: u32,
-    ) -> Self {
-        ThinkerDecision {
+    pub fn agent_continue_with_tokens(message: ChatMessage, input_tokens: u32, output_tokens: u32, cached_tokens: u32) -> Self {
+        ThinkerDecision{
             message,
             flow: ThinkerFlowControl::AgentContinue,
             token_usage: Some((input_tokens, output_tokens, cached_tokens)),
         }
     }
 
-    pub fn agent_pause_with_tokens(
-        message: ChatMessage,
-        input_tokens: u32,
-        output_tokens: u32,
-        cached_tokens: u32,
-    ) -> Self {
-        ThinkerDecision {
+    pub fn agent_pause_with_tokens(message: ChatMessage, input_tokens: u32, output_tokens: u32, cached_tokens: u32) -> Self {
+        ThinkerDecision{
             message,
             flow: ThinkerFlowControl::AgentPause,
             token_usage: Some((input_tokens, output_tokens, cached_tokens)),
@@ -94,3 +86,5 @@ pub trait Brain: Send + Sync {
     /// note that if the message contains toolcall, it will always continue
     async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError>;
 }
+
+

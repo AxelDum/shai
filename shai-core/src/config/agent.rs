@@ -1,10 +1,10 @@
+use super::config::ShaiConfig;
+use crate::tools::mcp::McpConfig;
+use json_comments::StripComments;
+use serde::{Deserialize, Serialize};
+use shai_llm::ToolCallMethod;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use json_comments::StripComments;
-use serde::{Serialize, Deserialize};
-use shai_llm::ToolCallMethod;
-use crate::tools::mcp::McpConfig;
-use super::config::ShaiConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentProviderConfig {
@@ -55,8 +55,7 @@ pub struct AgentConfig {
 
 fn default_llm_provider() -> AgentProviderConfig {
     // Load the default provider from ShaiConfig
-    let shai_config = ShaiConfig::load()
-        .unwrap_or_else(|_| ShaiConfig::default());
+    let shai_config = ShaiConfig::load().unwrap_or_else(|_| ShaiConfig::default());
 
     let provider_config = shai_config
         .get_selected_provider()
@@ -66,7 +65,7 @@ fn default_llm_provider() -> AgentProviderConfig {
         provider: provider_config.provider.clone(),
         env_vars: provider_config.env_vars.clone(),
         model: provider_config.model.clone(),
-        tool_method: provider_config.tool_method.clone(),
+        tool_method: provider_config.tool_method,
     }
 }
 
@@ -106,7 +105,7 @@ impl AgentConfig {
                     .map(|home| home.join(".config"))
                     .ok_or("Could not find home directory")
             })?;
-        
+
         let agents_dir = config_dir.join("shai").join("agents");
         std::fs::create_dir_all(&agents_dir)?;
         Ok(agents_dir)
@@ -121,7 +120,7 @@ impl AgentConfig {
     /// Load an agent config from file
     pub fn load(agent_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = Self::agent_config_path(agent_name)?;
-        
+
         if !config_path.exists() {
             return Err(format!("Agent config '{}' does not exist", agent_name).into());
         }
@@ -149,7 +148,7 @@ impl AgentConfig {
             for entry in std::fs::read_dir(agents_dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                
+
                 if let Some(extension) = path.extension() {
                     if extension == "config" {
                         if let Some(filename) = path.file_stem() {
@@ -176,7 +175,7 @@ impl AgentConfig {
     /// Delete an agent config
     pub fn delete(agent_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = Self::agent_config_path(agent_name)?;
-        
+
         if !config_path.exists() {
             return Err(format!("Agent config '{}' does not exist", agent_name).into());
         }
@@ -192,7 +191,8 @@ impl AgentConfig {
 
     /// Check if a specific MCP tool is enabled
     pub fn is_mcp_tool_enabled(&self, mcp_name: &str, tool_name: &str) -> bool {
-        self.tools.mcp
+        self.tools
+            .mcp
             .get(mcp_name)
             .map(|mcp_tool| mcp_tool.enabled_tools.contains(&tool_name.to_string()))
             .unwrap_or(false)
@@ -200,7 +200,8 @@ impl AgentConfig {
 
     /// Get all enabled MCP tool names across all MCP configs
     pub fn get_all_enabled_mcp_tools(&self) -> Vec<String> {
-        self.tools.mcp
+        self.tools
+            .mcp
             .values()
             .flat_map(|mcp_tool| &mcp_tool.enabled_tools)
             .cloned()

@@ -34,16 +34,11 @@ impl Shortcuts {
     pub fn from_env() -> Self {
         let defaults = Self::default();
         Self {
-            toggle_theme: std::env::var("SHAI_KEY_TOGGLE_THEME")
-                .unwrap_or(defaults.toggle_theme),
-            cancel_task: std::env::var("SHAI_KEY_CANCEL_TASK")
-                .unwrap_or(defaults.cancel_task),
-            clear_input: std::env::var("SHAI_KEY_CLEAR_INPUT")
-                .unwrap_or(defaults.clear_input),
-            paste: std::env::var("SHAI_KEY_PASTE")
-                .unwrap_or(defaults.paste),
-            exit: std::env::var("SHAI_KEY_EXIT")
-                .unwrap_or(defaults.exit),
+            toggle_theme: std::env::var("SHAI_KEY_TOGGLE_THEME").unwrap_or(defaults.toggle_theme),
+            cancel_task: std::env::var("SHAI_KEY_CANCEL_TASK").unwrap_or(defaults.cancel_task),
+            clear_input: std::env::var("SHAI_KEY_CLEAR_INPUT").unwrap_or(defaults.clear_input),
+            paste: std::env::var("SHAI_KEY_PASTE").unwrap_or(defaults.paste),
+            exit: std::env::var("SHAI_KEY_EXIT").unwrap_or(defaults.exit),
         }
     }
 

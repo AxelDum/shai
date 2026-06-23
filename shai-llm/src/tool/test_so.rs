@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod structured_output_integration_tests {
-    use std::sync::Arc;
+    use crate::tool::{AssistantResponse, StructuredOutputBuilder};
+    use crate::{client::LlmClient, ToolDescription};
     use openai_dive::v1::resources::chat::ChatCompletionParametersBuilder;
     use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
-    use crate::{client::LlmClient, ToolDescription};
-    use crate::tool::{AssistantResponse, StructuredOutputBuilder};
-    use tokio;
     use paste;
-    use serde::{Serialize, Deserialize};
     use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+    use std::sync::Arc;
+    use tokio;
 
     // Simple read tool parameters
     #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -62,10 +62,7 @@ mod structured_output_integration_tests {
     }
 
     fn create_test_tools() -> Vec<Arc<dyn ToolDescription>> {
-        vec![
-            Arc::new(ReadTool),
-            Arc::new(WriteTool),
-        ]
+        vec![Arc::new(ReadTool), Arc::new(WriteTool)]
     }
 
     fn create_llm_client(provider: &str, env_var: &str) -> Option<LlmClient> {
@@ -92,17 +89,15 @@ mod structured_output_integration_tests {
         };
 
         let tools = create_test_tools();
-        
+
         let request = ChatCompletionParametersBuilder::default()
             .model(model)
-            .messages(vec![
-                ChatMessage::User {
-                    content: ChatMessageContent::Text(
-                        "Just say hello, don't use any tools.".to_string()
-                    ),
-                    name: None,
-                }
-            ])
+            .messages(vec![ChatMessage::User {
+                content: ChatMessageContent::Text(
+                    "Just say hello, don't use any tools.".to_string(),
+                ),
+                name: None,
+            }])
             .with_structured_output(&tools)
             .temperature(0.1)
             .max_completion_tokens(200u32)
@@ -110,14 +105,21 @@ mod structured_output_integration_tests {
             .unwrap();
 
         let response = client.chat(request).await.unwrap();
-        
+
         if let Some(choice) = response.choices.first() {
-            if let ChatMessage::Assistant { content: Some(ChatMessageContent::Text(text)), .. } = &choice.message {
+            if let ChatMessage::Assistant {
+                content: Some(ChatMessageContent::Text(text)),
+                ..
+            } = &choice.message
+            {
                 let structured_response: AssistantResponse = serde_json::from_str(text).unwrap();
-                
+
                 assert!(!structured_response.content.is_empty());
-                assert!(structured_response.tools.is_none() || structured_response.tools.as_ref().unwrap().is_empty());
-                
+                assert!(
+                    structured_response.tools.is_none()
+                        || structured_response.tools.as_ref().unwrap().is_empty()
+                );
+
                 println!("✅ {} no-tool test passed", provider);
             }
         }
@@ -133,7 +135,7 @@ mod structured_output_integration_tests {
         };
 
         let tools = create_test_tools();
-        
+
         let request = ChatCompletionParametersBuilder::default()
             .model(model)
             .messages(vec![
@@ -151,21 +153,28 @@ mod structured_output_integration_tests {
             .unwrap();
 
         let response = client.chat(request).await.unwrap();
-        
+
         if let Some(choice) = response.choices.first() {
-            if let ChatMessage::Assistant { content: Some(ChatMessageContent::Text(text)), .. } = &choice.message {
+            if let ChatMessage::Assistant {
+                content: Some(ChatMessageContent::Text(text)),
+                ..
+            } = &choice.message
+            {
                 let structured_response: AssistantResponse = serde_json::from_str(text).unwrap();
-                
+
                 assert!(!structured_response.content.is_empty());
-                assert!(structured_response.tools.is_some(), "Tools should be present");
-                
+                assert!(
+                    structured_response.tools.is_some(),
+                    "Tools should be present"
+                );
+
                 let tools = structured_response.tools.unwrap();
                 assert!(!tools.is_empty(), "At least one tool should be called");
-                
+
                 // Find the read_file tool call
                 let read_tool_called = tools.iter().any(|tool| tool.tool_name == "read_file");
                 assert!(read_tool_called, "read_file tool must be called");
-                
+
                 println!("✅ {} read-tool test passed", provider);
             }
         }

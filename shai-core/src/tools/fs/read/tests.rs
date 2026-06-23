@@ -1,20 +1,20 @@
 use super::read::ReadTool;
 use super::structs::ReadToolParams;
-use crate::tools::{Tool, ToolCapability, FsOperationLog};
+use crate::tools::{FsOperationLog, Tool, ToolCapability};
 use shai_llm::ToolDescription;
-use tempfile::TempDir;
 use std::fs;
 use std::sync::Arc;
+use tempfile::TempDir;
 
 #[test]
 fn test_read_tool_creation() {
     let log = Arc::new(FsOperationLog::new());
     let tool = ReadTool::new(log);
-    
+
     // Verify tool properties
     assert_eq!(&tool.name(), "read");
     assert!(!tool.description().is_empty());
-    
+
     // Verify capabilities
     let capabilities = tool.capabilities();
     assert!(capabilities.contains(&ToolCapability::Read));
@@ -53,11 +53,14 @@ End of file"#;
         crate::tools::ToolResult::Success { output, .. } => {
             assert!(output.contains("Hello World"), "Should contain Hello World");
             assert!(output.contains("End of file"), "Should contain End of file");
-            assert!(output.contains("With multiple lines"), "Should contain all lines");
-        },
+            assert!(
+                output.contains("With multiple lines"),
+                "Should contain all lines"
+            );
+        }
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool should succeed, got error: {}", error);
-        },
+        }
         crate::tools::ToolResult::Denied => {
             panic!("Read tool was denied");
         }
@@ -77,11 +80,17 @@ End of file"#;
         crate::tools::ToolResult::Success { output, .. } => {
             assert!(output.contains("   1: "), "Should contain line number 1");
             assert!(output.contains("   5: "), "Should contain line number 5");
-            assert!(output.contains("This is a test file"), "Should contain content with line numbers");
-        },
+            assert!(
+                output.contains("This is a test file"),
+                "Should contain content with line numbers"
+            );
+        }
         crate::tools::ToolResult::Error { error, .. } => {
-            panic!("Read tool with line numbers should succeed, got error: {}", error);
-        },
+            panic!(
+                "Read tool with line numbers should succeed, got error: {}",
+                error
+            );
+        }
         crate::tools::ToolResult::Denied => {
             panic!("Read tool was denied");
         }
@@ -117,18 +126,33 @@ async fn test_read_tool_line_range_reading() {
     let result_range = read_tool.execute(params_range, None).await;
     match result_range {
         crate::tools::ToolResult::Success { output, .. } => {
-            assert!(output.contains("Line 5: Content for line 5"), "Should contain line 5");
-            assert!(output.contains("Line 10: Content for line 10"), "Should contain line 10");
-            assert!(!output.contains("Line 4: Content for line 4"), "Should not contain line 4");
-            assert!(!output.contains("Line 11: Content for line 11"), "Should not contain line 11");
-            
+            assert!(
+                output.contains("Line 5: Content for line 5"),
+                "Should contain line 5"
+            );
+            assert!(
+                output.contains("Line 10: Content for line 10"),
+                "Should contain line 10"
+            );
+            assert!(
+                !output.contains("Line 4: Content for line 4"),
+                "Should not contain line 4"
+            );
+            assert!(
+                !output.contains("Line 11: Content for line 11"),
+                "Should not contain line 11"
+            );
+
             // Count lines in output to verify range
             let line_count = output.lines().count();
-            assert_eq!(line_count, 6, "Should have exactly 6 lines (5-10 inclusive)");
-        },
+            assert_eq!(
+                line_count, 6,
+                "Should have exactly 6 lines (5-10 inclusive)"
+            );
+        }
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool range should succeed, got error: {}", error);
-        },
+        }
         crate::tools::ToolResult::Denied => {
             panic!("Read tool was denied");
         }
@@ -145,17 +169,29 @@ async fn test_read_tool_line_range_reading() {
     let result_from_line = read_tool.execute(params_from_line, None).await;
     match result_from_line {
         crate::tools::ToolResult::Success { output, .. } => {
-            assert!(output.contains("Line 15: Content for line 15"), "Should contain line 15");
-            assert!(output.contains("Line 20: Content for line 20"), "Should contain line 20");
-            assert!(!output.contains("Line 14: Content for line 14"), "Should not contain line 14");
-            
+            assert!(
+                output.contains("Line 15: Content for line 15"),
+                "Should contain line 15"
+            );
+            assert!(
+                output.contains("Line 20: Content for line 20"),
+                "Should contain line 20"
+            );
+            assert!(
+                !output.contains("Line 14: Content for line 14"),
+                "Should not contain line 14"
+            );
+
             // Should have lines 15-20 (6 lines)
             let line_count = output.lines().count();
-            assert_eq!(line_count, 6, "Should have exactly 6 lines (15-20 inclusive)");
-        },
+            assert_eq!(
+                line_count, 6,
+                "Should have exactly 6 lines (15-20 inclusive)"
+            );
+        }
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool from line should succeed, got error: {}", error);
-        },
+        }
         crate::tools::ToolResult::Denied => {
             panic!("Read tool was denied");
         }
@@ -173,11 +209,17 @@ async fn test_read_tool_line_range_reading() {
     match result_nonexistent {
         crate::tools::ToolResult::Success { .. } => {
             panic!("Read tool should fail for non-existent file");
-        },
+        }
         crate::tools::ToolResult::Error { error, .. } => {
-            assert!(error.contains("No such file") || error.contains("not found") || error.contains("cannot find") || error.contains("does not exist"),
-                   "Should indicate file not found error, got: {}", error);
-        },
+            assert!(
+                error.contains("No such file")
+                    || error.contains("not found")
+                    || error.contains("cannot find")
+                    || error.contains("does not exist"),
+                "Should indicate file not found error, got: {}",
+                error
+            );
+        }
         crate::tools::ToolResult::Denied => {
             panic!("Read tool was denied");
         }

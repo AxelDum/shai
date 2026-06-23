@@ -1,7 +1,12 @@
 use ansi_to_tui::IntoText;
-use ratatui::{layout::Rect, style::{Color, Style, Stylize}, symbols::border, text::{Line, Span}, widgets::{Block, Borders, Padding, Widget}, Frame};
-
-
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style, Stylize},
+    symbols::border,
+    text::{Line, Span},
+    widgets::{Block, Borders, Padding, Widget},
+    Frame,
+};
 
 pub struct HelpArea;
 
@@ -20,24 +25,27 @@ impl HelpArea {
             "",
             "  Shortcuts:",
             "  Ctrl+T               toggle dark/light theme",
+            "  Ctrl+L               clear screen / reset viewport",
+            "  Ctrl+R               retry/regenerate last response",
+            "  Ctrl+K               copy last assistant response to clipboard",
+            "  Ctrl+P               toggle auto-approve permissions (sudo mode)",
             "  Ctrl+V               paste from clipboard",
             "  Alt+Enter            insert newline (multi-line input)",
-        ].join("\n").to_string()
+        ]
+        .join("\n")
+        .to_string()
     }
 }
 
 impl HelpArea {
     pub fn height(&self) -> u16 {
-        12 // content (3 general help lines + 1 blank + 1 header + 3 command lines + 1 blank + 4 shortcut lines)
+        16 // content (3 general help lines + 1 blank + 1 header + 3 command lines + 1 blank + 8 shortcut lines)
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {
         let helper_text = self.helper_msg();
         let x = helper_text.into_text().unwrap();
         let x = x.style(Style::default().fg(Color::White));
-        f.render_widget(
-            x, 
-            area
-        );
+        f.render_widget(x, area);
     }
 }

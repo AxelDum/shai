@@ -4,4 +4,4 @@ pub mod structs;
 #[cfg(test)]
 mod tests;
 
-pub use memory::{MemoryWriteTool, MemoryReadTool};
+pub use memory::{MemoryReadTool, MemoryWriteTool};

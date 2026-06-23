@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::tools::memory::{MemoryWriteTool, MemoryReadTool};
-    use crate::tools::{ToolResult, Tool};
+    use crate::tools::memory::{MemoryReadTool, MemoryWriteTool};
+    use crate::tools::{Tool, ToolResult};
 
     #[tokio::test]
     async fn test_memory_write_and_read() {
@@ -48,10 +48,7 @@ mod tests {
         let git_root = crate::runners::coder::env::find_git_root();
         assert!(git_root.is_some(), "Should be running inside a git repo");
         if let Some(root) = git_root {
-            assert!(
-                root.join(".git").exists(),
-                "Git root should contain .git"
-            );
+            assert!(root.join(".git").exists(), "Git root should contain .git");
         }
     }
 }

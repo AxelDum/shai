@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Parameters for writing a memory fact.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

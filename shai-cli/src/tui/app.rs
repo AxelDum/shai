@@ -77,6 +77,7 @@ pub struct App<'a> {
 
     pub(crate) total_input_tokens: u32,
     pub(crate) total_output_tokens: u32,
+    pub(crate) total_cached_tokens: u32,
 
     pub(crate) theme: Theme, // UI theme (dark/light)
     pub(crate) status_bar: StatusBar,
@@ -317,12 +318,15 @@ impl App<'_> {
         if let AgentEvent::TokenUsage {
             input_tokens,
             output_tokens,
+            cached_tokens,
         } = &event
         {
             self.total_input_tokens += input_tokens;
             self.total_output_tokens += output_tokens;
+            self.total_cached_tokens += cached_tokens;
             self.status_bar
                 .set_tokens(self.total_input_tokens, self.total_output_tokens);
+
         }
 
         // Handle error events - display inline in red
@@ -364,6 +368,7 @@ impl App<'_> {
             permission_queue: VecDeque::new(),
             total_input_tokens: 0,
             total_output_tokens: 0,
+            total_cached_tokens: 0,
             theme,
             status_bar: StatusBar::new(theme),
             history: ConversationHistory::new(),

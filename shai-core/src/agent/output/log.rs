@@ -77,13 +77,16 @@ impl FileEventLogger {
             AgentEvent::TokenUsage {
                 input_tokens,
                 output_tokens,
+                cached_tokens,
             } => {
                 format!(
-                    "Token Usage: input={} output={} total={}",
+                    "Token Usage: input={} output={} cached={} total={}",
                     input_tokens,
                     output_tokens,
+                    cached_tokens,
                     input_tokens + output_tokens
                 )
+
             }
         };
 

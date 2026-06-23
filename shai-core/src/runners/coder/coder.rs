@@ -97,8 +97,14 @@ impl Brain for CoderBrain {
         let token_usage = brain_decision.usage.as_ref().map(|usage| {
             let input = usage.prompt_tokens.unwrap_or(0);
             let output = usage.completion_tokens.unwrap_or(0);
-            (input, output)
+            let cached = usage.input_tokens_details.as_ref()
+                .map(|d| d.cached_tokens)
+                .or_else(|| usage.prompt_tokens_details.as_ref().map(|d| d.cached_tokens))
+                .unwrap_or(0);
+            (input, output, cached)
         });
+
+        eprintln!("[brain::coder] LLM response usage: {:?}", brain_decision.usage);
 
         // stop here if there's no other tool calls
         let message = brain_decision.choices.into_iter().next().unwrap().message;
@@ -111,11 +117,12 @@ impl Brain for CoderBrain {
         {
             if tool_calls.as_ref().is_none_or(|calls| calls.is_empty()) {
                 return Ok(match token_usage {
-                    Some((input_tokens, output_tokens)) => {
+                    Some((input_tokens, output_tokens, cached_tokens)) => {
                         ThinkerDecision::agent_pause_with_tokens(
                             message,
                             input_tokens,
                             output_tokens,
+                            cached_tokens,
                         )
                     }
                     None => ThinkerDecision::agent_pause(message),
@@ -123,8 +130,8 @@ impl Brain for CoderBrain {
             }
         }
         Ok(match token_usage {
-            Some((input_tokens, output_tokens)) => {
-                ThinkerDecision::agent_continue_with_tokens(message, input_tokens, output_tokens)
+            Some((input_tokens, output_tokens, cached_tokens)) => {
+                ThinkerDecision::agent_continue_with_tokens(message, input_tokens, output_tokens, cached_tokens)
             }
             None => ThinkerDecision::agent_continue(message),
         })

@@ -6,7 +6,7 @@ pub mod fetch;
 pub mod bash;
 pub mod mcp;
 pub mod memory;
-
+pub mod skills;
 
 #[cfg(test)]
 mod tests_llm;

@@ -190,7 +190,7 @@ impl ShaiPtyManager {
     fn setup_window_resize_handler(&self) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             let mut sa: libc::sigaction = std::mem::zeroed();
-            sa.sa_sigaction = handle_sigwinch as usize;
+            sa.sa_sigaction = handle_sigwinch as *const () as usize;
             libc::sigemptyset(&mut sa.sa_mask);
             sa.sa_flags = libc::SA_RESTART;
             

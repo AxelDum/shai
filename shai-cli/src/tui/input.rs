@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
@@ -7,15 +6,14 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
 use jwalk::WalkDir;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Padding, Paragraph, Widget},
     Frame,
 };
-use shai_core::agent::{AgentController, AgentEvent, PublicAgentState};
-use shai_llm::{tool::call_fc_auto::ToolCallFunctionCallingAuto, ToolCallMethod};
+use shai_llm::ToolCallMethod;
 use tui_textarea::{Input, TextArea};
 
 use crate::tui::helper::HelpArea;
@@ -755,10 +753,9 @@ impl InputArea<'_> {
         f.render_widget(&self.input, prompt);
 
         // Helper text area below input
-        let [helper_left, _, helper_right] = Layout::horizontal([
+        let [helper_left, _] = Layout::horizontal([
             Constraint::Fill(1),
-            Constraint::Fill(1),
-            Constraint::Length(self.method_str().len() as u16),
+            Constraint::Length(0),
         ])
         .areas(helper);
 
@@ -776,15 +773,6 @@ impl InputArea<'_> {
                 Style::default().fg(self.palette.input_text),
             ),
             helper_left,
-        );
-
-        // Status
-        f.render_widget(
-            Span::styled(
-                self.method_str(),
-                Style::default().fg(self.palette.method_label),
-            ),
-            helper_right,
         );
 
         // Command suggestions

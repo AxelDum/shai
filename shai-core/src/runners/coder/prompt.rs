@@ -61,6 +61,8 @@ static CODER_PROMPT: &str = r#"{{CODER_GUIDELINE}}
 
 {{SHAI_PROMPT}}
 
+{{MEMORY}}
+
 {{CODER_ENV}}
 
 {{SKILLS}}"#;
@@ -264,6 +266,12 @@ pub fn render_system_prompt_template(template: &str) -> String {
         }
     }
 
+    // Insert memory content if placeholder present
+    if result.contains("{{MEMORY}}") {
+        let memory = crate::tools::memory::load_merged_memory();
+        result = result.replace("{{MEMORY}}", &memory);
+    }
+
     // Inject skill catalog if placeholder present
     if result.contains("{{SKILLS}}") {
         let skills = crate::tools::skills::discovery::discover_skills();
@@ -334,6 +342,26 @@ Use the tool provided to fill in your decision, the tool expect a decision (yes 
 Though achieving user's objective is the principal objective, it may happen that it is not possible or that achieving it requires more input from the user or more complex work needs to be done. In that case you can reply Yes. It may happen that you thought you were done, though upon further examination some tool calls could get us closer to user's objective, in that case reply NO.
 
 If you reply is NO, then you must explain to yourself why upon further investigation you think you can do more in this round.
+"#;
+
+pub static PLAN_MODE_PROMPT: &str = r#"
+## PLAN MODE
+
+You are in PLAN mode. Your ONLY job is to analyze the request and produce a detailed step-by-step plan. Do NOT write, create, or modify any files. Do NOT execute any commands. Do NOT call any tool that modifies files or executes commands.
+
+### Rules
+- You MUST NOT call any tool that modifies files or executes commands. This includes `write`, `edit`, `bash`, `multiedit`, and any other mutating tool.
+- You MAY use read-only tools (`read`, `find`, `ls`, `grep`) to explore the codebase and gather context.
+- Do NOT write, create, or modify any files.
+- Do NOT attempt to execute any changes — just plan them.
+
+### Output Format
+Produce a clear, numbered plan outlining:
+1. What files need to be created or modified.
+2. What changes need to be made in each file.
+3. Any dependencies or prerequisites.
+
+Do not attempt to execute the plan. Just describe it.
 "#;
 
 pub fn coder_check_goal() -> String {

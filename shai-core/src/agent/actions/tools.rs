@@ -182,20 +182,16 @@ impl AgentCore {
                                     .map(|f| {
                                         let path =
                                             f.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                        let line_start = f
-                                            .get("line_start")
+                                        let offset = f
+                                            .get("offset")
                                             .and_then(|v| v.as_u64())
                                             .unwrap_or(0);
-                                        let line_end =
-                                            f.get("line_end").and_then(|v| v.as_u64()).unwrap_or(0);
-                                        let show_line_numbers = f
-                                            .get("show_line_numbers")
-                                            .and_then(|v| v.as_bool())
-                                            .unwrap_or(false);
-                                        format!(
-                                            "{}:{}:{}:{}",
-                                            path, line_start, line_end, show_line_numbers
-                                        )
+                                        let limit = f
+                                            .get("limit")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let outline = f.get("outline").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        format!("{}:{}:{}:{}", path, offset, limit, outline)
                                     })
                                     .collect::<Vec<_>>()
                                     .join("|")

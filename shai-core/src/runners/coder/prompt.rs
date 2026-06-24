@@ -33,6 +33,13 @@ When modifying code, adhere to the existing style, libraries, and patterns of th
  * Use the provided tools to interact with the user's environment.
  * Do not use comments in code to communicate with the user.
  * Use the `todo_write` and `todo_read` tools to plan and track your work, especially for complex tasks. This provide visibility to the user. You must use these tools extensively.
+ * Prefer dedicated tools over bash commands:
+   - Use `read` instead of `cat`, `less`, `head`, `tail`, or `bat`
+   - Use `find` instead of `grep` or `find` commands
+   - Use `ls` instead of `ls` or `dir` commands
+   - Use `edit` instead of `sed`, `awk`, or `perl` for file modifications
+   - Use `write` instead of redirect operators (`>`, `>>`)
+   - Use `bash` only for compiling, testing, running scripts, git operations, and other commands without a dedicated tool
 
 **No Surprises:** 
 Do not commit changes to version control unless explicitly asked to do so by the user.
@@ -311,7 +318,7 @@ todoStatus: This is the current status of the todo list
 
 pub async fn get_todo_read(todo_tool: &Arc<dyn AnyTool>) -> String {
     let todo = todo_tool.execute_json(serde_json::json!({}), None).await;
-    if let ToolResult::Success { output, metadata } = todo {
+    if let ToolResult::Success { output, .. } = todo {
         TODO_STATUS.to_string().replace("{{TODO_LIST}}", &output)
     } else {
         TODO_STATUS

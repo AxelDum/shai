@@ -42,6 +42,7 @@ End of file"#;
             line_start: None,
             line_end: None,
             show_line_numbers: false,
+                                outline: false,
         }],
     };
 
@@ -83,6 +84,7 @@ async fn test_read_tool_line_range_reading() {
             line_start: Some(5),
             line_end: Some(10),
             show_line_numbers: true,
+                                outline: false,
         }],
     };
 
@@ -117,6 +119,7 @@ async fn test_read_tool_nonexistent_file() {
             line_start: None,
             line_end: None,
             show_line_numbers: false,
+                                outline: false,
         }],
     };
 
@@ -165,12 +168,14 @@ async fn test_read_tool_multi_file() {
                 line_start: None,
                 line_end: None,
                 show_line_numbers: true,
+                                    outline: false,
             },
             ReadFileSpec {
                 path: file_b.to_string_lossy().to_string(),
                 line_start: None,
                 line_end: None,
                 show_line_numbers: true,
+                                    outline: false,
             },
         ],
     };
@@ -208,12 +213,14 @@ async fn test_read_tool_mixed_existence() {
                 line_start: None,
                 line_end: None,
                 show_line_numbers: false,
+                                    outline: false,
             },
             ReadFileSpec {
                 path: "/nonexistent/file.txt".to_string(),
                 line_start: None,
                 line_end: None,
                 show_line_numbers: false,
+                                    outline: false,
             },
         ],
     };

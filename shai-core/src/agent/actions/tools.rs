@@ -163,10 +163,21 @@ impl AgentCore {
 
                     // Check read cache for read tool calls
                     let read_cache_key = if call.tool_name == "read" {
-                        let path = call.parameters.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                        let line_start = call.parameters.get("line_start").map(|v| v.as_u64().unwrap_or(0)).unwrap_or(0);
-                        let line_end = call.parameters.get("line_end").map(|v| v.as_u64().unwrap_or(0)).unwrap_or(0);
-                        Some(format!("{}:{}:{}:{}", path, line_start, line_end, call.parameters.get("show_line_numbers").map(|v| v.as_bool().unwrap_or(false)).unwrap_or(false)))
+                        // Build cache key from all file specs in the files array
+                        call.parameters.get("files")
+                            .and_then(|v| v.as_array())
+                            .map(|files| {
+                                files.iter()
+                                    .map(|f| {
+                                        let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                        let line_start = f.get("line_start").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let line_end = f.get("line_end").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let show_line_numbers = f.get("show_line_numbers").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        format!("{}:{}:{}:{}", path, line_start, line_end, show_line_numbers)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("|")
+                            })
                     } else {
                         None
                     };
@@ -228,24 +239,27 @@ impl AgentCore {
                             }
                         }
 
-                        // Cache the result if it was a read command
+                        // Cache the result if it was a read command and was successful
                         if let Some(ref key) = read_cache_key {
-                            let compacted = compact_tool_result(
-                                &call.tool_name,
-                                exec_result.metadata(),
-                                &exec_result.to_string(),
-                                &compaction_config,
-                            );
-                            let mut cache = read_cache.write().await;
-                            cache.push((key.clone(), compacted));
-                            if cache.len() > max_cached_reads {
-                                cache.remove(0);
+                            if exec_result.is_success() {
+                                let compacted = compact_tool_result(
+                                    &call.tool_name,
+                                    exec_result.metadata(),
+                                    &exec_result.to_string(),
+                                    &compaction_config,
+                                );
+                                let mut cache = read_cache.write().await;
+                                cache.push((key.clone(), compacted));
+                                if cache.len() > max_cached_reads {
+                                    cache.remove(0);
+                                }
                             }
                         }
 
                         // Invalidate read cache entries for edited files
-                        if call.tool_name == "edit" || call.tool_name == "multiedit" || call.tool_name == "multifileedit" || call.tool_name == "write" {
-                            let edited_paths: Vec<String> = if call.tool_name == "multifileedit" {
+                        if call.tool_name == "edit" || call.tool_name == "write" {
+                            let edited_paths: Vec<String> = if call.tool_name == "edit" {
+                                // edit tool uses files: [{file_path, edits: [...]}]
                                 call.parameters.get("files")
                                     .and_then(|v| v.as_array())
                                     .map(|arr| {
@@ -255,16 +269,19 @@ impl AgentCore {
                                     })
                                     .unwrap_or_default()
                             } else {
-                                call.parameters.get("path")
-                                    .or_else(|| call.parameters.get("file_path"))
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| vec![s.to_string()])
+                                // write tool uses files: [{path, content}]
+                                call.parameters.get("files")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|f| f.get("path").and_then(|p| p.as_str()).map(String::from))
+                                            .collect()
+                                    })
                                     .unwrap_or_default()
                             };
                             if !edited_paths.is_empty() {
                                 let mut cache = read_cache.write().await;
                                 cache.retain(|(key, _)| {
-                                    let path_part = key.split(':').next().unwrap_or("");
                                     !edited_paths.iter().any(|p| key.starts_with(&format!("{}:", p)) || key == p)
                                 });
                             }

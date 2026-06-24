@@ -157,10 +157,16 @@ async fn test_edit_multifile_basic() {
     fs::write(&file_b, "Goodbye Moon").unwrap();
 
     let log = Arc::new(FsOperationLog::new());
-    log.log_operation(crate::tools::FsOperationType::Read, file_a.to_string_lossy().to_string())
-        .await;
-    log.log_operation(crate::tools::FsOperationType::Read, file_b.to_string_lossy().to_string())
-        .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_a.to_string_lossy().to_string(),
+    )
+    .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_b.to_string_lossy().to_string(),
+    )
+    .await;
 
     let tool = EditTool::new(log);
     let params = EditToolParams {
@@ -203,10 +209,16 @@ async fn test_edit_multifile_atomicity() {
     fs::write(&file_b, "Goodbye Moon").unwrap();
 
     let log = Arc::new(FsOperationLog::new());
-    log.log_operation(crate::tools::FsOperationType::Read, file_a.to_string_lossy().to_string())
-        .await;
-    log.log_operation(crate::tools::FsOperationType::Read, file_b.to_string_lossy().to_string())
-        .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_a.to_string_lossy().to_string(),
+    )
+    .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_b.to_string_lossy().to_string(),
+    )
+    .await;
 
     let tool = EditTool::new(log);
     let params = EditToolParams {
@@ -416,10 +428,16 @@ async fn test_hash_anchored_multifile_edit() {
     fs::write(&file_b, "fn bar() {}\n").unwrap();
 
     let log = Arc::new(FsOperationLog::new());
-    log.log_operation(crate::tools::FsOperationType::Read, file_a.to_string_lossy().to_string())
-        .await;
-    log.log_operation(crate::tools::FsOperationType::Read, file_b.to_string_lossy().to_string())
-        .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_a.to_string_lossy().to_string(),
+    )
+    .await;
+    log.log_operation(
+        crate::tools::FsOperationType::Read,
+        file_b.to_string_lossy().to_string(),
+    )
+    .await;
 
     let tool = EditTool::new(log);
     let params = EditToolParams {
@@ -565,21 +583,15 @@ fn test_myers_diff_no_changes() {
 #[tokio::test]
 async fn test_drain_edited_files() {
     let log = FsOperationLog::new();
-    log.log_operation(
-        crate::tools::FsOperationType::Edit,
-        "foo.rs".to_string(),
-    )
-    .await;
+    log.log_operation(crate::tools::FsOperationType::Edit, "foo.rs".to_string())
+        .await;
     log.log_operation(
         crate::tools::FsOperationType::MultiEdit,
         "bar.py".to_string(),
     )
     .await;
-    log.log_operation(
-        crate::tools::FsOperationType::Read,
-        "baz.txt".to_string(),
-    )
-    .await;
+    log.log_operation(crate::tools::FsOperationType::Read, "baz.txt".to_string())
+        .await;
 
     let drained = log.drain_edited_files().await;
     assert_eq!(drained.len(), 2);

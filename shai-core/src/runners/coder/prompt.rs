@@ -1,6 +1,8 @@
 use std::fs;
 use std::sync::Arc;
 
+use tracing::{debug, warn};
+
 use crate::tools::{AnyTool, ToolResult};
 
 use super::env::*;
@@ -132,7 +134,7 @@ fn load_agents_content() -> String {
         Ok(content) => compact_agents_content(&content),
         Err(e) => {
             if agents_path.exists() {
-                eprintln!("\x1b[2m\u{26a0} Failed to read AGENTS.md: {}\\x1b[0m", e);
+                warn!(target: "brain::coder", "Failed to read AGENTS.md: {}", e);
             }
             String::new()
         }
@@ -147,15 +149,13 @@ fn load_shai_content() -> String {
     match fs::read_to_string(&shai_path) {
         Ok(content) => {
             if !content.is_empty() {
-                eprintln!(
-                    "\x1b[2m⚠ SHAI.md is deprecated, please consider migrating to AGENTS.md\x1b[0m"
-                );
+                warn!(target: "brain::coder", "SHAI.md is deprecated, please consider migrating to AGENTS.md");
             }
             content
         }
         Err(e) => {
             if shai_path.exists() {
-                eprintln!("\x1b[2m⚠ Failed to read SHAI.md: {}\x1b[0m", e);
+                warn!(target: "brain::coder", "Failed to read SHAI.md: {}", e);
             }
             String::new()
         }

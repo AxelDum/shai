@@ -389,13 +389,13 @@ impl AgentCore {
         mut internal_rx: broadcast::Receiver<InternalAgentEvent>,
     ) -> JoinHandle<ToolResult> {
         tokio::spawn(async move {
-            // check permission, we allow all Read Tool
+            // Read-only tools are always allowed without permission
+            // Plan mode allows all tools (the system prompt prevents writes)
+            // Sudo mode allows all tools without asking
             let can_run = tool.capabilities().is_empty()
                 || tool.capabilities() == &[ToolCapability::Read]
-                || claims
-                    .read()
-                    .await
-                    .is_permitted(&tool.name(), &call.parameters);
+                || claims.read().await.is_sudo()
+                || claims.read().await.is_plan_mode();
 
             // request permission if needed (|| is short-circuiting, so won't call if can_run is true)
             let can_run = can_run
@@ -413,12 +413,6 @@ impl AgentCore {
                 };
 
             if !can_run {
-                let claims_guard = claims.read().await;
-                if claims_guard.is_plan_mode() {
-                    return ToolResult::error(
-                        "Tool execution is disabled in PLAN mode. Do not attempt to write, edit, or execute commands. Instead, describe the changes you would make as a detailed plan.".to_string(),
-                    );
-                }
                 return ToolResult::denied();
             }
 

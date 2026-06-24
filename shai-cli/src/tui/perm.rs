@@ -236,7 +236,7 @@ impl PermissionWidget<'_> {
 
         let items = [
             "Allow",
-            "Allow all tools and don't ask again for this session",
+            "Use auto mode",
             "Deny",
         ];
         let mut lines = vec![Line::from("Do you want to run this tool?")];

@@ -101,7 +101,7 @@ All settings are configurable via the agent's `CompactionConfig`:
     "max_output_chars": 8000,
     "max_tool_calls_per_turn": 100,
     "max_cached_commands": 50,
-    "max_trace_chars": 50000
+    "max_trace_chars": 200000
   }
 }
 ```
@@ -110,4 +110,4 @@ All settings are configurable via the agent's `CompactionConfig`:
 |---------|---------|-------------|
 | `max_tool_calls_per_turn` | `100` | Maximum tool calls per user turn before forcing a wrap-up |
 | `max_cached_commands` | `50` | Number of recent bash commands to cache for duplicate detection |
-| `max_trace_chars` | `50000` | Character threshold above which older tool results are compacted |
+| `max_trace_chars` | `200000` | Character threshold above which older tool results are compacted |

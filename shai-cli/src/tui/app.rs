@@ -681,10 +681,15 @@ impl App<'_> {
 
                 if widget.height() > terminal_height.saturating_sub(5) {
                     // Use alternate screen for large modals
-                    if let Ok(mut modal) = AlternateScreenPermissionModal::new(&widget, palette) {
-                        let action = modal.run().await.unwrap_or(PermissionModalAction::Nope);
-                        self.handle_permission_action(action).await?;
-                    }
+                    let action = match AlternateScreenPermissionModal::new(&widget, palette) {
+                        Ok(mut modal) => modal.run().await.unwrap_or_else(|_| {
+                            PermissionModalAction::Response {
+                                request_id: request_id.clone(),
+                                choice: shai_core::agent::PermissionResponse::Deny,
+                            }
+                        }),
+                    };
+                    self.handle_permission_action(action).await?;
                 } else {
                     // Use inline modal for small modals
                     self.state = AppModalState::PermissionModal { widget };

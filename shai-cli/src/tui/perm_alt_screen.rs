@@ -26,18 +26,19 @@ use super::theme::ThemePalette;
 
 pub struct AlternateScreenPermissionModal<'a> {
     widget: PermissionWidget<'a>,
+    request_id: String,
 }
 
 impl AlternateScreenPermissionModal<'_> {
     pub fn new(widget: &PermissionWidget, palette: ThemePalette) -> io::Result<Self> {
-        Ok(Self {
-            widget: PermissionWidget::new(
-                widget.request_id.clone(),
-                widget.request.clone(),
-                widget.remaining_perms,
-                palette,
-            ),
-        })
+        let request_id = widget.request_id.clone();
+        let widget = PermissionWidget::new(
+            request_id.clone(),
+            widget.request.clone(),
+            widget.remaining_perms,
+            palette,
+        );
+        Ok(Self { widget, request_id })
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
@@ -81,7 +82,7 @@ impl AlternateScreenPermissionModal<'_> {
                         {
                             // Treat Ctrl+C as Escape (Deny)
                             return Ok(PermissionModalAction::Response {
-                                request_id: "".to_string(), // We'll fix this access later
+                                request_id: self.request_id.clone(),
                                 choice: shai_core::agent::PermissionResponse::Deny,
                             });
                         }

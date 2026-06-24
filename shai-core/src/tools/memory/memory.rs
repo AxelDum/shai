@@ -118,7 +118,13 @@ pub struct MemoryWriteTool;
 
 #[tool(
     name = "memory_write",
-    description = "Save a fact or instruction to the project's memory file for future reference. Use this to persistently store important context about the project (e.g., conventions, decisions, architecture notes) that should be available in future sessions."
+    description = r#"Save a fact or instruction to the project's memory file for future reference. Use this to persistently store important context about the project (e.g., conventions, decisions, architecture notes) that should be available in future sessions.
+
+**Examples:**
+```json
+{"content": "The project uses Rust edition 2021 and requires nightly toolchain."}
+```
+"#
 )]
 impl MemoryWriteTool {
     pub fn new() -> Self {

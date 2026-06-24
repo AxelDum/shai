@@ -189,7 +189,26 @@ impl ReadTool {
 - Use full reads (without `outline`) when you need exact content for editing.
 - When investigating a task, read multiple potentially relevant files in a single call to build context.
 
-**IMPORTANT:** This is the preferred tool for inspecting file contents. Do not use `bash` with `cat`, `less`, `head`, `tail`, or `bat` --- use this tool instead."#, capabilities = [Read])]
+**IMPORTANT:** This is the preferred tool for inspecting file contents. Do not use `bash` with `cat`, `less`, `head`, `tail`, or `bat` --- use this tool instead.
+
+**Examples:**
+Read a single file:
+```json
+{"files": [{"path": "src/main.rs"}]}
+```
+Read with offset and limit:
+```json
+{"files": [{"path": "src/main.rs", "offset": 50, "limit": 100}]}
+```
+Read multiple files:
+```json
+{"files": [{"path": "src/main.rs"}, {"path": "src/lib.rs"}]}
+```
+Get symbol outline:
+```json
+{"files": [{"path": "src/main.rs", "outline": true}]}
+```
+"#, capabilities = [Read])]
 impl ReadTool {
     async fn execute(&self, params: ReadToolParams) -> ToolResult {
         if params.files.is_empty() {
@@ -250,5 +269,22 @@ impl ReadTool {
             output: outputs.join("\n\n"),
             metadata: Some(meta),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shai_llm::ToolDescription;
+
+    #[test]
+    fn test_read_schema_required_fields() {
+        let operation_log = Arc::new(FsOperationLog::new());
+        let tool = ReadTool::new(operation_log);
+        let schema = tool.parameters_schema();
+
+        // The "files" field should be present in properties
+        let files_prop = &schema["properties"]["files"];
+        assert_eq!(files_prop["type"].as_str().unwrap_or(""), "array");
     }
 }

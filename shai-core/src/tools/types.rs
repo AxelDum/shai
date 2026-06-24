@@ -156,7 +156,13 @@ pub trait Tool: ToolDescription + Send + Sync {
         // Deserialize JSON directly to typed parameters
         let typed_params: <Self>::Params = match serde_json::from_value(params) {
             Ok(p) => p,
-            Err(e) => return ToolResult::error(format!("Parameter deserialization failed: {}", e)),
+            Err(e) => {
+                return ToolResult::error(format!(
+                    "Parameter deserialization failed for '{}': {}",
+                    self.name(),
+                    e
+                ))
+            }
         };
 
         // Call the typed execute method directly

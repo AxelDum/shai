@@ -137,8 +137,10 @@ impl AppAuth {
                         self.exit = true;
                     }
                     NavAction::Next => {
-                        // Load fresh config and start provider selection
-                        let config = ShaiConfig::load().unwrap_or_default();
+                        let config = ShaiConfig::load().unwrap_or_else(|e| {
+                            eprintln!("Warning: failed to load config, using default: {}", e);
+                            ShaiConfig::default()
+                        });
                         let providers = LlmClient::list_providers();
                         let modal_providers = ModalProviders::new(config, providers);
                         self.state = AuthState::SelectProvider(modal_providers);

@@ -21,7 +21,10 @@ pub struct ModalConfig {
 
 impl ModalConfig {
     pub fn new() -> Self {
-        let config = ShaiConfig::load().unwrap_or_default();
+        let config = ShaiConfig::load().unwrap_or_else(|e| {
+            eprintln!("Warning: failed to load config, using default: {}", e);
+            ShaiConfig::default()
+        });
 
         Self {
             config,

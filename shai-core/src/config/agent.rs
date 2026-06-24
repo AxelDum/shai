@@ -165,8 +165,10 @@ fn default_max_trace_chars() -> usize {
 }
 
 fn default_llm_provider() -> AgentProviderConfig {
-    // Load the default provider from ShaiConfig
-    let shai_config = ShaiConfig::load().unwrap_or_else(|_| ShaiConfig::default());
+    let shai_config = ShaiConfig::load().unwrap_or_else(|e| {
+        tracing::warn!("Failed to load config, using default: {}", e);
+        ShaiConfig::default()
+    });
 
     let provider_config = shai_config
         .get_selected_provider()

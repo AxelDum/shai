@@ -14,9 +14,71 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
     pub session_id: String,
+    pub name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub trace: Vec<ChatMessage>,
+}
+
+const ADJECTIVES: &[&str] = &[
+    "swift", "clever", "bright", "calm", "eager", "fancy", "gentle", "happy",
+    "jolly", "lively", "merry", "noble", "proud", "silly", "witty", "brave",
+    "cosmic", "dazzling", "frosty", "golden", "lucky", "magic", "noble", "vivid",
+];
+
+const NOUNS: &[&str] = &[
+    "otter", "falcon", "panda", "tiger", "wolf", "eagle", "fox", "bear",
+    "lynx", "raven", "swan", "hawk", "lion", "owl", "panther", "whale",
+    "comet", "river", "meadow", "canyon", "forest", "summit", "harbor", "glacier",
+];
+
+/// Derive a short title from the first user message in the trace.
+/// If the trace is empty or has no user text, falls back to a random name.
+fn generate_session_name_from_trace(trace: &[ChatMessage]) -> Option<String> {
+    let first_user_text = trace.iter().find_map(|msg| match msg {
+        openai_dive::v1::resources::chat::ChatMessage::User { content, .. } => match content {
+            openai_dive::v1::resources::chat::ChatMessageContent::Text(t) if !t.trim().is_empty() => {
+                Some(t.trim())
+            }
+            _ => None,
+        },
+        _ => None,
+    });
+
+    match first_user_text {
+        Some(text) => {
+            // Take first line, trim to a reasonable length
+            let title = text.lines().next().unwrap_or(text);
+            let title = title.trim();
+            if title.is_empty() {
+                None
+            } else {
+                // Truncate to 60 chars and add ellipsis if needed
+                let max_len = 60;
+                if title.chars().count() > max_len {
+                    let truncated: String = title.chars().take(max_len).collect();
+                    Some(format!("{}…", truncated))
+                } else {
+                    Some(title.to_string())
+                }
+            }
+        }
+        None => None,
+    }
+}
+
+/// Generate a random fancy session name (adjective-noun).
+fn generate_session_name() -> String {
+    // Use thread-local RNG for simplicity; we don't need cryptographic randomness.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let seed = seed as u64;
+    let adj = ADJECTIVES[(seed.wrapping_mul(2654435761) % ADJECTIVES.len() as u64) as usize];
+    let noun = NOUNS[(seed.wrapping_mul(40503) % NOUNS.len() as u64) as usize];
+    format!("{}-{}", adj, noun)
 }
 
 /// Handle session persistence to disk
@@ -50,6 +112,15 @@ impl SessionPersist {
             return Ok(());
         }
 
+        // Don't keep empty trace files around — delete if one already exists
+        if trace.is_empty() {
+            let file_path = Self::session_file_path(session_id);
+            if file_path.exists() {
+                let _ = fs::remove_file(&file_path);
+            }
+            return Ok(());
+        }
+
         let folder = Self::folder();
 
         // Create directory if it doesn't exist
@@ -60,21 +131,26 @@ impl SessionPersist {
 
         let file_path = Self::session_file_path(session_id);
 
-        // Load existing data to preserve created_at, or create new
-        let (created_at, updated_at) = if file_path.exists() {
+        // Load existing data to preserve created_at and name, or create new
+        let (created_at, updated_at, name) = if file_path.exists() {
             match fs::read_to_string(&file_path) {
                 Ok(content) => match serde_json::from_str::<SessionData>(&content) {
-                    Ok(existing) => (existing.created_at, Utc::now()),
-                    Err(_) => (Utc::now(), Utc::now()),
+                    Ok(existing) => (existing.created_at, Utc::now(), existing.name),
+                    Err(_) => (Utc::now(), Utc::now(), None),
                 },
-                Err(_) => (Utc::now(), Utc::now()),
+                Err(_) => (Utc::now(), Utc::now(), None),
             }
         } else {
-            (Utc::now(), Utc::now())
+            // For new sessions, derive a title from the first user message,
+            // falling back to a random name if none found.
+            let name = generate_session_name_from_trace(&trace)
+                .unwrap_or_else(generate_session_name);
+            (Utc::now(), Utc::now(), Some(name))
         };
 
         let session_data = SessionData {
             session_id: session_id.to_string(),
+            name,
             created_at,
             updated_at,
             trace,

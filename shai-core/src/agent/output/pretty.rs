@@ -30,7 +30,7 @@ impl PrettyFormatter {
         match event {
             AgentEvent::ThinkingStart => None,
             AgentEvent::BrainResult { thought, .. } => self.format_thinking(thought),
-            AgentEvent::ToolCallStarted { call, .. } => {
+            AgentEvent::ToolCallStarted { .. } => {
                 // do nothing because tool can be call in parallel, we only display the result
                 None
             }
@@ -75,12 +75,12 @@ impl PrettyFormatter {
 
                 Some(output)
             }
-            AgentEvent::UserInputRequired { request, .. } => {
+            AgentEvent::UserInputRequired { .. } => {
                 //let markdown = format!("🤔 **User input required:** {:?}", request);
                 //Some(self.skin.term_text(&markdown).to_string())
                 None
             }
-            AgentEvent::PermissionRequired { request, .. } => {
+            AgentEvent::PermissionRequired { .. } => {
                 //let markdown = format!("🔐 **Permission required:** {}", request.operation);
                 //Some(self.skin.term_text(&markdown).to_string())
                 None

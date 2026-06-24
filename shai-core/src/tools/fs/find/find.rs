@@ -161,7 +161,9 @@ impl FindTool {
 - Exclude irrelevant directories and files (like `target` or `.git`) using the `exclude_patterns` parameter to speed up the search.
 
 **Output:**
-- Returns a list of matching file paths, sorted with the most recently modified files appearing first. This helps prioritize recently changed files."#, capabilities = [ToolCapability::Read])]
+- Returns a list of matching file paths, sorted with the most recently modified files appearing first. This helps prioritize recently changed files.
+
+**IMPORTANT:** This is the preferred tool for searching files by name or content. Do not use `bash` with `grep` or `find` commands — use this tool instead."#, capabilities = [ToolCapability::Read])]
 
 impl FindTool {
     async fn execute(&self, params: FindToolParams) -> ToolResult {

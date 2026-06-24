@@ -1,6 +1,7 @@
 use super::ansi::strip_ansi;
 
 /// Lines matching this pattern are always preserved during head/tail truncation.
+#[allow(dead_code)]
 const ERROR_PATTERN: &str = "error|Error|ERROR|failed|FAILED|panic|FATAL|Exception";
 
 /// Generic compaction applied to every tool result regardless of tool name.

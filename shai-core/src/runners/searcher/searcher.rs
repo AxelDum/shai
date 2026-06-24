@@ -73,8 +73,6 @@ impl Brain for SearcherBrain {
 
         // stop here if there's no other tool calls
         if let ChatMessage::Assistant {
-            reasoning_content,
-            content,
             tool_calls,
             ..
         } = &brain_decision

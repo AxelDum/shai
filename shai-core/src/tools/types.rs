@@ -142,7 +142,7 @@ pub trait Tool: ToolDescription + Send + Sync {
 
     /// execute the tool in preview mode - shows what would happen without making changes
     /// Default implementation returns None (no preview available)
-    async fn execute_preview(&self, params: Self::Params) -> Option<ToolResult> {
+    async fn execute_preview(&self, _params: Self::Params) -> Option<ToolResult> {
         None
     }
 

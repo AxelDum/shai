@@ -14,6 +14,10 @@ pub struct ReadFileSpec {
     /// Whether to include line numbers and hashes in the output
     #[serde(default)]
     pub show_line_numbers: bool,
+    /// When true, return a compact symbol outline instead of full file content.
+    /// Falls back to full read if the language is unsupported.
+    #[serde(default)]
+    pub outline: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

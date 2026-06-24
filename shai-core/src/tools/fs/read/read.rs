@@ -1,6 +1,7 @@
 use super::super::{FsOperationLog, FsOperationType};
 use super::structs::{ReadFileSpec, ReadToolParams};
 use crate::tools::fs::hash::compute_line_hash;
+use crate::tools::fs::symbol::{extract_symbols, format_outline, LanguageRegistry};
 use crate::tools::{tool, ToolResult};
 use serde_json::json;
 use std::collections::HashMap;
@@ -12,14 +13,46 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ReadTool {
     operation_log: Arc<FsOperationLog>,
+    language_registry: Arc<LanguageRegistry>,
 }
 
 impl ReadTool {
     pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
-        Self { operation_log }
+        let language_registry = Arc::new(
+            LanguageRegistry::new().unwrap_or_else(|e| {
+                tracing::error!("Failed to initialize language registry: {}", e);
+                // Return an empty registry that reports all files as unsupported
+                // This should never happen in practice since all grammars are compiled in
+                panic!("Failed to initialize language registry: {}", e)
+            }),
+        );
+        Self {
+            operation_log,
+            language_registry,
+        }
+    }
+
+    pub fn with_language_registry(
+        operation_log: Arc<FsOperationLog>,
+        language_registry: Arc<LanguageRegistry>,
+    ) -> Self {
+        Self {
+            operation_log,
+            language_registry,
+        }
     }
 
     fn read_file_content(&self, params: &ReadFileSpec) -> io::Result<String> {
+        // If outline mode is requested, try to produce a symbol outline
+        if params.outline {
+            if let Some(config) = self.language_registry.config_for_path(&params.path) {
+                let content = fs::read_to_string(&params.path)?;
+                let symbols = extract_symbols(&content, config);
+                return Ok(format_outline(&symbols, &params.path));
+            }
+            // Fall through to normal read if language is unsupported
+        }
+
         let file = fs::File::open(&params.path)?;
         let reader = BufReader::new(file);
 
@@ -139,10 +172,15 @@ impl ReadTool {
 - Pass an array of file specs in the `files` parameter.
 - Each spec requires a `path` and optionally `line_start`, `line_end`, and `show_line_numbers`.
 - When `show_line_numbers` is true, output includes line numbers and hashes for each line.
+- Set `outline: true` to return a compact symbol outline instead of full file content.
+  Useful for understanding file structure before reading specific sections. Falls back to
+  full read if the language is unsupported.
 
 **Best Practices:**
 - When investigating a task, read multiple potentially relevant files in a single call to build context.
-- Always use `show_line_numbers: true` when you plan to edit the files afterward — the line hashes enable precise targeting."#, capabilities = [Read])]
+- Always use `show_line_numbers: true` when you plan to edit the files afterward — the line hashes enable precise targeting.
+
+**IMPORTANT:** This is the preferred tool for inspecting file contents. Do not use `bash` with `cat`, `less`, `head`, `tail`, or `bat` --- use this tool instead."#, capabilities = [Read])]
 impl ReadTool {
     async fn execute(&self, params: ReadToolParams) -> ToolResult {
         if params.files.is_empty() {

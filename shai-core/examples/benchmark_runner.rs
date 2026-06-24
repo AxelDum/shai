@@ -1,9 +1,10 @@
+use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Command;
-use serde::Deserialize;
 
 /// JSON output from measurement_harness
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct Report {
     name: String,
     category: String,
@@ -16,6 +17,7 @@ struct Report {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct ReportSummary {
     total_input: u32,
     total_output: u32,
@@ -24,6 +26,7 @@ struct ReportSummary {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct VerifyResult {
     command: String,
     passed: bool,
@@ -49,9 +52,7 @@ fn collect_scripts(args: &[String]) -> Vec<PathBuf> {
             if let Ok(entries) = std::fs::read_dir(&path) {
                 let mut json_files: Vec<_> = entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path().extension().map_or(false, |ext| ext == "json")
-                    })
+                    .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
                     .map(|e| e.path())
                     .collect();
                 json_files.sort();
@@ -164,12 +165,18 @@ fn main() {
 
     let mut reports = Vec::new();
     for (i, script) in scripts.iter().enumerate() {
-        let task_name = script.file_stem()
+        let task_name = script
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| format!("task-{}", i));
         let output_dir = format!("{}/{}", run_dir, task_name);
 
-        eprintln!("[{}/{}] {}", i + 1, scripts.len(), script.file_name().unwrap_or_default().to_string_lossy());
+        eprintln!(
+            "[{}/{}] {}",
+            i + 1,
+            scripts.len(),
+            script.file_name().unwrap_or_default().to_string_lossy()
+        );
         if let Some(report) = run_benchmark(script, &output_dir) {
             let total_tokens = report.summary.total_input + report.summary.total_output;
             eprintln!(
@@ -186,7 +193,10 @@ fn main() {
     }
 
     // Final summary table
-    println!("\n{:<30} {:<12} {:<10} {:<8} {:>10} {:>10}", "Task", "Category", "Diff", "Status", "Tokens", "Duration");
+    println!(
+        "\n{:<30} {:<12} {:<10} {:<8} {:>10} {:>10}",
+        "Task", "Category", "Diff", "Status", "Tokens", "Duration"
+    );
     println!("{}", "-".repeat(85));
 
     for report in &reports {
@@ -205,14 +215,29 @@ fn main() {
 
     // Aggregate stats
     if !reports.is_empty() {
-        let total_tokens: u32 = reports.iter().map(|r| r.summary.total_input + r.summary.total_output).sum();
+        let total_tokens: u32 = reports
+            .iter()
+            .map(|r| r.summary.total_input + r.summary.total_output)
+            .sum();
         let total_duration: u64 = reports.iter().map(|r| r.total_duration_ms).sum();
-        let passed = reports.iter().filter(|r| !r.verification.is_empty() && r.verification.iter().all(|v| v.passed)).count();
-        let failed = reports.iter().filter(|r| !r.verification.is_empty() && !r.verification.iter().all(|v| v.passed)).count();
+        let passed = reports
+            .iter()
+            .filter(|r| !r.verification.is_empty() && r.verification.iter().all(|v| v.passed))
+            .count();
+        let failed = reports
+            .iter()
+            .filter(|r| !r.verification.is_empty() && !r.verification.iter().all(|v| v.passed))
+            .count();
         let no_verify = reports.iter().filter(|r| r.verification.is_empty()).count();
 
-        println!("\nTotal: {} passed, {} failed, {} no-verify | {} tokens | {:.1}s",
-            passed, failed, no_verify, total_tokens, total_duration as f64 / 1000.0);
+        println!(
+            "\nTotal: {} passed, {} failed, {} no-verify | {} tokens | {:.1}s",
+            passed,
+            failed,
+            no_verify,
+            total_tokens,
+            total_duration as f64 / 1000.0
+        );
     }
 
     eprintln!("\nResults written to: {}/", run_dir);

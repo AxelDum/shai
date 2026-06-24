@@ -25,7 +25,7 @@ pub enum FsOperationType {
 pub struct FsOperationLog {
     operations: RwLock<Vec<FsOperation>>,
     read_files: RwLock<HashSet<String>>, // Tracks which files have been read
-    edited_files: RwLock<Vec<String>>, // Files edited since last verification
+    edited_files: RwLock<Vec<String>>,   // Files edited since last verification
 }
 
 impl FsOperationLog {
@@ -56,7 +56,9 @@ impl FsOperationLog {
         if operation_type == FsOperationType::Read {
             let mut read_files = self.read_files.write().await;
             read_files.insert(file_path);
-        } else if operation_type == FsOperationType::Edit || operation_type == FsOperationType::MultiEdit {
+        } else if operation_type == FsOperationType::Edit
+            || operation_type == FsOperationType::MultiEdit
+        {
             let mut edited = self.edited_files.write().await;
             edited.push(file_path);
         }

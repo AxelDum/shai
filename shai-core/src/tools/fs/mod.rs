@@ -4,6 +4,7 @@ pub mod hash;
 pub mod ls;
 pub mod operation_log;
 pub mod read;
+pub mod symbol;
 pub mod verification;
 pub mod write;
 

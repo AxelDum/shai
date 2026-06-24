@@ -136,10 +136,22 @@ fn default_verification_timeout_secs() -> u64 {
 fn default_verification_commands() -> HashMap<String, Vec<String>> {
     let mut commands = HashMap::new();
     commands.insert("rust".to_string(), vec!["cargo".into(), "check".into()]);
-    commands.insert("go".to_string(), vec!["go".into(), "build".into(), "./...".into()]);
-    commands.insert("python".to_string(), vec!["python".into(), "-m".into(), "py_compile".into()]);
-    commands.insert("typescript".to_string(), vec!["node".into(), "--check".into()]);
-    commands.insert("javascript".to_string(), vec!["node".into(), "--check".into()]);
+    commands.insert(
+        "go".to_string(),
+        vec!["go".into(), "build".into(), "./...".into()],
+    );
+    commands.insert(
+        "python".to_string(),
+        vec!["python".into(), "-m".into(), "py_compile".into()],
+    );
+    commands.insert(
+        "typescript".to_string(),
+        vec!["node".into(), "--check".into()],
+    );
+    commands.insert(
+        "javascript".to_string(),
+        vec!["node".into(), "--check".into()],
+    );
     commands.insert("perl".to_string(), vec!["perl".into(), "-c".into()]);
     commands.insert("ruby".to_string(), vec!["ruby".into(), "-c".into()]);
     commands.insert("bash".to_string(), vec!["bash".into(), "-n".into()]);

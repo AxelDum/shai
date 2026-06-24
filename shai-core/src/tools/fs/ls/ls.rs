@@ -237,7 +237,9 @@ impl LsTool {
 
 **Recommendations:**
 - For large directories, consider using the `find` tool instead, which offers powerful filtering and search capabilities.
-- Use `recursive: true` carefully, especially in directories like `node_modules/` which contain thousands of files."#, capabilities = [ToolCapability::Read])]
+- Use `recursive: true` carefully, especially in directories like `node_modules/` which contain thousands of files.
+
+**IMPORTANT:** This is the preferred tool for listing directory contents. Do not use `bash` with `ls` or `dir` — use this tool instead."#, capabilities = [ToolCapability::Read])]
 impl LsTool {
     async fn execute(&self, params: LsToolParams) -> ToolResult {
         let mut files_collected = 0;

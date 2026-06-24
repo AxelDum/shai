@@ -81,9 +81,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: file_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -130,9 +130,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: file_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -210,9 +210,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: file1_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -302,9 +302,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: config_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -339,9 +339,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: script_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -374,9 +374,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: config_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,
@@ -392,9 +392,9 @@ mod integration_tests {
                 ReadToolParams {
                     files: vec![ReadFileSpec {
                         path: script_path.to_string_lossy().to_string(),
-                        line_start: None,
-                        line_end: None,
-                        show_line_numbers: false,
+                        offset: None,
+                        limit: None,
+                        outline: false,
                     }],
                 },
                 None,

@@ -16,6 +16,12 @@ pub struct ThinkerContext {
     pub temperature:      f32,
     pub is_plan_mode:    bool,
     pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
+    /// Number of tool calls made in the current turn
+    pub tool_call_count: usize,
+    /// Maximum tool calls per turn (None = unlimited)
+    pub max_tool_calls: Option<usize>,
+    /// Soft budget threshold (max_tool_calls / 2). Warnings and critical notices are based on this.
+    pub soft_tool_calls: Option<usize>,
 }
 
 /// ThinkerFlowControl drives the agentic flow

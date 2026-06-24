@@ -118,6 +118,10 @@ impl InputArea<'_> {
         self.agent_mode
     }
 
+    pub fn set_agent_mode(&mut self, mode: AgentMode) {
+        self.agent_mode = mode;
+    }
+
     pub fn cycle_agent_mode(&mut self) -> AgentMode {
         self.agent_mode = match self.agent_mode {
             AgentMode::Plan => AgentMode::Manual,

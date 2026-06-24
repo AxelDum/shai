@@ -564,27 +564,6 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+P — Toggle auto-approve permissions (sudo mode)
-        if matches!(key_event.code, KeyCode::Char('p'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
-            if let Some(ref agent) = self.agent {
-                let is_sudo = agent.controller.is_sudo().await.unwrap_or(false);
-                if is_sudo {
-                    let _ = agent.controller.no_sudo().await;
-                    self.input
-                        .alert_msg("Auto-approve disabled", Duration::from_secs(2));
-                } else {
-                    let _ = agent.controller.sudo().await;
-                    self.input
-                        .alert_msg("Auto-approve enabled", Duration::from_secs(2));
-                }
-            }
-            return Ok(());
-        }
-
         // Handle Shift+Tab — Cycle agent mode (Plan/Manual/Auto)
         if key_event.code == KeyCode::BackTab {
             let mode = self.input.cycle_agent_mode();
@@ -593,11 +572,20 @@ impl App<'_> {
                 match mode {
                     AgentMode::Plan => {
                         let _ = agent.controller.plan_mode().await;
+                        let _ = agent.controller.no_sudo().await;
                     }
-                    AgentMode::Manual | AgentMode::Auto => {
+                    AgentMode::Manual => {
                         let _ = agent.controller.no_plan_mode().await;
+                        let _ = agent.controller.no_sudo().await;
+                    }
+                    AgentMode::Auto => {
+                        let _ = agent.controller.no_plan_mode().await;
+                        let _ = agent.controller.sudo().await;
                     }
                 }
+            }
+            return Ok(());
+        }
 
         // Handle Ctrl+X — Expand last tool result in alternate screen viewer
         if matches!(key_event.code, KeyCode::Char('x'))
@@ -636,6 +624,8 @@ impl App<'_> {
                         shai_core::agent::events::PermissionResponse::AllowAlways
                     ) {
                         let _ = agent.controller.sudo().await;
+                        self.input.set_agent_mode(AgentMode::Auto);
+                        self.status_bar.set_agent_mode("Auto");
                     }
                     if let Err(e) = agent
                         .controller
@@ -688,6 +678,10 @@ impl App<'_> {
                                 choice: shai_core::agent::PermissionResponse::Deny,
                             }
                         }),
+                        Err(_) => PermissionModalAction::Response {
+                            request_id: request_id.clone(),
+                            choice: shai_core::agent::PermissionResponse::Deny,
+                        },
                     };
                     self.handle_permission_action(action).await?;
                 } else {

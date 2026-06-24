@@ -13,6 +13,8 @@ pub enum AgentRequest {
     Terminate,
     /// Stop the currently executing task
     StopCurrentTask,
+    /// Regenerate the last response (removes last assistant message and re-thinks)
+    Regenerate,
     /// Get current agent state
     GetState,
     /// Get the conversation trace
@@ -42,6 +44,8 @@ pub enum AgentRequest {
     /// Manage sudo mode: Some(true) = enable, Some(false) = disable, None = get status
     /// Always returns current sudo status after operation
     Sudo(Option<bool>),
+    /// Manage plan mode: Some(true) = enable, Some(false) = disable, None = get status
+    PlanMode(Option<bool>),
     /// Drop controller IO, this closes it for all controller.
     /// Once this is done, it cannot be reopen!
     Droping,
@@ -56,6 +60,7 @@ pub enum AgentResponse {
     State { state: PublicAgentState },
     Trace { trace: Vec<ChatMessage> },
     SudoStatus { enabled: bool },
+    PlanModeStatus { enabled: bool },
     Error { error: String },
 }
 
@@ -104,6 +109,13 @@ impl AgentController {
 
     pub async fn stop_current_task(&self) -> Result<(), AgentError> {
         self.send(AgentRequest::StopCurrentTask)
+            .await
+            .map(|_| Ok(()))?
+    }
+
+    /// Remove the last assistant message(s) and re-think from the last user input
+    pub async fn regenerate(&self) -> Result<(), AgentError> {
+        self.send(AgentRequest::Regenerate)
             .await
             .map(|_| Ok(()))?
     }
@@ -249,6 +261,36 @@ impl AgentController {
             AgentResponse::SudoStatus { enabled } => Ok(enabled),
             _ => Err(AgentError::InvalidResponse(
                 "Expected SudoStatus response".to_string(),
+            )),
+        }
+    }
+
+    /// Enable plan mode - denies all tool execution (read-only)
+    pub async fn plan_mode(&self) -> Result<bool, AgentError> {
+        match self.send(AgentRequest::PlanMode(Some(true))).await? {
+            AgentResponse::PlanModeStatus { enabled } => Ok(enabled),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected PlanModeStatus response".to_string(),
+            )),
+        }
+    }
+
+    /// Disable plan mode - re-enables tool execution
+    pub async fn no_plan_mode(&self) -> Result<bool, AgentError> {
+        match self.send(AgentRequest::PlanMode(Some(false))).await? {
+            AgentResponse::PlanModeStatus { enabled } => Ok(enabled),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected PlanModeStatus response".to_string(),
+            )),
+        }
+    }
+
+    /// Check if plan mode is enabled
+    pub async fn is_plan_mode(&self) -> Result<bool, AgentError> {
+        match self.send(AgentRequest::PlanMode(None)).await? {
+            AgentResponse::PlanModeStatus { enabled } => Ok(enabled),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected PlanModeStatus response".to_string(),
             )),
         }
     }

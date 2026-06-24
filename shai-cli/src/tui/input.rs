@@ -22,6 +22,13 @@ use crate::tui::helper::HelpArea;
 
 use super::theme::{ThemePalette, SHAI_YELLOW};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentMode {
+    Plan,
+    Manual,
+    Auto,
+}
+
 pub enum UserAction {
     Nope,
     CancelTask,
@@ -53,6 +60,7 @@ pub struct InputArea<'a> {
 
     // method info bottom right
     method: ToolCallMethod,
+    agent_mode: AgentMode,
 
     // bottom helper
     help: Option<HelpArea>,
@@ -92,6 +100,7 @@ impl InputArea<'_> {
             helper_duration: None,
             escape_press_time: None,
             method: ToolCallMethod::FunctionCall,
+            agent_mode: AgentMode::Manual,
             help: None,
             history: Vec::new(),
             history_index: 0,
@@ -104,6 +113,23 @@ impl InputArea<'_> {
             palette,
         }
     }
+
+    pub fn agent_mode(&self) -> AgentMode {
+        self.agent_mode
+    }
+
+    pub fn cycle_agent_mode(&mut self) -> AgentMode {
+        self.agent_mode = match self.agent_mode {
+            AgentMode::Plan => AgentMode::Manual,
+            AgentMode::Manual => AgentMode::Auto,
+            AgentMode::Auto => AgentMode::Plan,
+        };
+        self.agent_mode
+    }
+}
+
+/// alert message in yellow, top left
+impl InputArea<'_> {
 
     pub fn set_history(&mut self, history: Vec<String>) {
         self.history = history;
@@ -235,7 +261,7 @@ impl InputArea<'_> {
         if current_text.starts_with('/') && !current_text.contains(' ') {
             let prefix = current_text.trim();
             let all_commands = [
-                "/exit", "/auth", "/tc", "/tokens", "/theme", "/restore", "/latest", "/skills",
+                "/exit", "/tc", "/tokens", "/theme", "/restore", "/latest", "/skills", "/regenerate",
             ];
             let filtered: Vec<String> = all_commands
                 .iter()

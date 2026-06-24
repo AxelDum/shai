@@ -1,6 +1,6 @@
 use shai_core::tools::{
-    AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, MultiEditTool,
-    ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
+    AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, ReadTool,
+    TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
 };
 use std::sync::Arc;
 
@@ -12,7 +12,6 @@ pub enum ToolName {
     Fetch,
     Find,
     Ls,
-    MultiEdit,
     Read,
     TodoRead,
     TodoWrite,
@@ -27,7 +26,6 @@ impl ToolName {
             ToolName::Fetch,
             ToolName::Find,
             ToolName::Ls,
-            ToolName::MultiEdit,
             ToolName::Read,
             ToolName::TodoRead,
             ToolName::TodoWrite,
@@ -42,7 +40,6 @@ impl ToolName {
             ToolName::Fetch => "fetch",
             ToolName::Find => "find",
             ToolName::Ls => "ls",
-            ToolName::MultiEdit => "multiedit",
             ToolName::Read => "read",
             ToolName::TodoRead => "todoread",
             ToolName::TodoWrite => "todowrite",
@@ -57,7 +54,6 @@ impl ToolName {
             "fetch" => Some(ToolName::Fetch),
             "find" => Some(ToolName::Find),
             "ls" => Some(ToolName::Ls),
-            "multiedit" => Some(ToolName::MultiEdit),
             "read" => Some(ToolName::Read),
             "todoread" => Some(ToolName::TodoRead),
             "todowrite" => Some(ToolName::TodoWrite),
@@ -124,7 +120,6 @@ impl ToolConfig {
                 ToolName::Fetch => toolbox.push(Box::new(FetchTool::new())),
                 ToolName::Find => toolbox.push(Box::new(FindTool::new())),
                 ToolName::Ls => toolbox.push(Box::new(LsTool::new())),
-                ToolName::MultiEdit => toolbox.push(Box::new(MultiEditTool::new(fs_log.clone()))),
                 ToolName::Read => toolbox.push(Box::new(ReadTool::new(fs_log.clone()))),
                 ToolName::TodoRead => {
                     toolbox.push(Box::new(TodoReadTool::new(todo_storage.clone())))

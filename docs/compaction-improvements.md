@@ -8,7 +8,7 @@ Following the analysis of a benchmark run where the shai-harness ballooned to 2.
 
 ### 1. Max Tool Calls Per Turn
 
-Added a configurable limit (`max_tool_calls_per_turn`, default: 30) that tracks tool calls since the last user message. When the limit is hit, the agent injects a wrap-up message into the trace and transitions back to `Running` state, prompting the LLM to summarize and respond without further tool calls.
+Added a configurable limit (`max_tool_calls_per_turn`, default: 100) that tracks tool calls since the last user message. When the limit is hit, the agent injects a wrap-up message into the trace and transitions back to `Running` state, prompting the LLM to summarize and respond without further tool calls.
 
 **Files modified:**
 - `shai-core/src/config/agent.rs` — Added `max_tool_calls_per_turn` to `CompactionConfig`
@@ -99,7 +99,7 @@ All settings are configurable via the agent's `CompactionConfig`:
   "compaction": {
     "enabled": true,
     "max_output_chars": 8000,
-    "max_tool_calls_per_turn": 30,
+    "max_tool_calls_per_turn": 100,
     "max_cached_commands": 50,
     "max_trace_chars": 50000
   }
@@ -108,6 +108,6 @@ All settings are configurable via the agent's `CompactionConfig`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `max_tool_calls_per_turn` | `30` | Maximum tool calls per user turn before forcing a wrap-up |
+| `max_tool_calls_per_turn` | `100` | Maximum tool calls per user turn before forcing a wrap-up |
 | `max_cached_commands` | `50` | Number of recent bash commands to cache for duplicate detection |
 | `max_trace_chars` | `50000` | Character threshold above which older tool results are compacted |

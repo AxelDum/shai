@@ -28,7 +28,6 @@ impl HelpArea {
             "  Ctrl+L               clear screen / reset viewport",
             "  Ctrl+R               retry/regenerate last response",
             "  Ctrl+K               copy last assistant response to clipboard",
-            "  Ctrl+P               toggle auto-approve permissions (sudo mode)",
             "  Ctrl+V               paste from clipboard",
             "  Alt+Enter            insert newline (multi-line input)",
         ]
@@ -39,7 +38,7 @@ impl HelpArea {
 
 impl HelpArea {
     pub fn height(&self) -> u16 {
-        16 // content (3 general help lines + 1 blank + 1 header + 3 command lines + 1 blank + 8 shortcut lines)
+        self.helper_msg().lines().count() as u16
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {

@@ -44,6 +44,22 @@ pub enum PublicAgentState {
     Failed { error: String },
 }
 
+impl std::fmt::Display for PublicAgentState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PublicAgentState::Starting => write!(f, "starting"),
+            PublicAgentState::Running => write!(f, "running"),
+            PublicAgentState::Processing { .. } => write!(f, "processing"),
+            PublicAgentState::Paused => write!(f, "paused"),
+            PublicAgentState::Completed { success } => {
+                write!(f, "{}", if *success { "completed" } else { "failed" })
+            }
+            PublicAgentState::Cancelled => write!(f, "cancelled"),
+            PublicAgentState::Failed { .. } => write!(f, "failed"),
+        }
+    }
+}
+
 impl InternalAgentState {
     /// Convert internal status to public status (removing channels and sync primitives)
     pub fn to_public(&self) -> PublicAgentState {

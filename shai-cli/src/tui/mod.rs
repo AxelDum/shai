@@ -10,5 +10,6 @@ pub mod session_picker;
 pub mod shortcuts;
 pub mod statusbar;
 pub mod theme;
+pub mod viewer;
 
 pub use app::App;

@@ -197,7 +197,10 @@ impl EditTool {
 
         // Check if the old_string exists in the content
         if !content.contains(old_string) {
-            return Err("Pattern not found in file".to_string());
+            return Err(format!(
+                "Pattern '{}' not found in file. Re-read the file to get current content.",
+                old_string.chars().take(80).collect::<String>()
+            ));
         }
 
         // Perform the replacement
@@ -231,7 +234,22 @@ impl EditTool {
 **Critical:**
 - You must first use the `read` tool to inspect any file before editing it.
 - Edits within each file are applied sequentially.
-- The entire operation is atomic — if any edit fails, no files are modified."#, capabilities = [ToolCapability::Read, ToolCapability::Write])]
+- The entire operation is atomic — if any edit fails, no files are modified.
+
+**Examples:**
+Replace text in a file:
+```json
+{"files": [{"path": "src/main.rs", "edits": [{"old_string": "fn main() {", "new_string": "fn main() -> Result<(), Box<dyn std::error::Error> {"}]}]}
+```
+Replace all occurrences:
+```json
+{"files": [{"path": "src/lib.rs", "edits": [{"old_string": "todo!()", "new_string": "unimplemented!()", "replace_all": true}]}]}
+```
+Edit multiple files atomically:
+```json
+{"files": [{"path": "src/mod.rs", "edits": [{"old_string": "foo", "new_string": "bar"}]}, {"path": "src/lib.rs", "edits": [{"old_string": "baz", "new_string": "qux"}]}]}
+```
+"#, capabilities = [ToolCapability::Read, ToolCapability::Write])]
 impl EditTool {
     async fn execute_preview(&self, params: EditToolParams) -> Option<ToolResult> {
         Some(self.execute_internal(params, true).await)

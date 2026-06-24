@@ -46,7 +46,18 @@ impl WriteTool {
 **Guidelines:**
 - To overwrite an existing file, you must first have read it with the `read` tool. This is a safety measure to ensure you are aware of the content being replaced.
 - This tool is primarily for creating new files when explicitly instructed. For modifying existing files, use the `edit` tool.
-- Do not create files proactively, especially documentation. Only create files when the user's request cannot be fulfilled by modifying existing ones."#, capabilities = [Write])]
+- Do not create files proactively, especially documentation. Only create files when the user's request cannot be fulfilled by modifying existing ones.
+
+**Examples:**
+Create a new file:
+```json
+{"files": [{"path": "src/new_module.rs", "content": "pub fn hello() {\n    println!(\"hello\");\n"}]}
+```
+Write multiple files:
+```json
+{"files": [{"path": "src/mod.rs", "content": "pub mod foo;"}, {"path": "src/foo.rs", "content": "// TODO"}]}
+```
+"#, capabilities = [Write])]
 impl WriteTool {
     async fn execute_preview(&self, params: WriteToolParams) -> Option<ToolResult> {
         let mut outputs = Vec::new();
@@ -66,6 +77,15 @@ impl WriteTool {
     async fn execute(&self, params: WriteToolParams) -> ToolResult {
         if params.files.is_empty() {
             return ToolResult::error("At least one file is required".to_string());
+        }
+
+        // Validate that existing files have been read first
+        for file_spec in &params.files {
+            if Path::new(&file_spec.path).exists() {
+                if let Err(err) = self.operation_log.validate_edit_permission(&file_spec.path).await {
+                    return ToolResult::error(err);
+                }
+            }
         }
 
         let mut outputs = Vec::new();

@@ -514,7 +514,12 @@ impl AgentCore {
                     .find(|t| t.name() == tool_call.tool_name)
                     .cloned()
                     .ok_or_else(|| {
-                        ToolResult::error(format!("tool not found: {}", tool_call.tool_name))
+                        let available: Vec<String> = tools.iter().map(|t| t.name()).collect();
+                        ToolResult::error(format!(
+                            "tool not found: '{}'. Available tools: {}",
+                            tool_call.tool_name,
+                            available.join(", ")
+                        ))
                     })
                     .map(|tool| (tool, tool_call))
             })

@@ -3195,6 +3195,7 @@ dependencies = [
  "shai-llm",
  "shai-macros",
  "similar",
+ "streaming-iterator",
  "tempfile",
  "termimad",
  "thiserror 2.0.12",
@@ -3208,6 +3209,7 @@ dependencies = [
  "tree-sitter-c",
  "tree-sitter-cpp",
  "tree-sitter-go",
+ "tree-sitter-highlight",
  "tree-sitter-java",
  "tree-sitter-javascript",
  "tree-sitter-lua",
@@ -3969,6 +3971,18 @@ checksum = "b13d476345220dbe600147dd444165c5791bf85ef53e28acbedd46112ee18431"
 dependencies = [
  "cc",
  "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-highlight"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc5f880ad8d8f94e88cb81c3557024cf1a8b75e3b504c50481ed4f5a6006ff3"
+dependencies = [
+ "regex",
+ "streaming-iterator",
+ "thiserror 2.0.12",
+ "tree-sitter",
 ]
 
 [[package]]

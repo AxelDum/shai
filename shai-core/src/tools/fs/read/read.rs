@@ -17,10 +17,10 @@ const MAX_LINE_SUFFIX: &str = "... (line truncated to 2000 chars)";
 const BINARY_SAMPLE_SIZE: usize = 4096;
 
 const BINARY_EXTENSIONS: &[&str] = &[
-    ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".class", ".jar", ".war", ".7z",
-    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".bin",
-    ".dat", ".obj", ".o", ".lib", ".wasm", ".pyc", ".pyo", ".png", ".jpg", ".jpeg",
-    ".gif", ".webp", ".bmp", ".ico", ".tiff", ".pdf", ".mp3", ".mp4", ".avi", ".mov",
+    ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".class", ".jar", ".war", ".7z", ".doc", ".docx",
+    ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".bin", ".dat", ".obj", ".o", ".lib",
+    ".wasm", ".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tiff",
+    ".pdf", ".mp3", ".mp4", ".avi", ".mov",
 ];
 
 #[derive(Clone)]
@@ -147,8 +147,7 @@ impl ReadTool {
 
         // Add truncation footer
         let last_line = offset + lines.len() - 1;
-        let truncated = lines.len() == limit as usize
- || (lines.len() as u32) < total_lines as u32;
+        let truncated = lines.len() == limit as usize || (lines.len() as u32) < total_lines as u32;
         if truncated {
             if lines.len() == limit as usize {
                 output.push_str(&format!(

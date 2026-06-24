@@ -51,6 +51,95 @@ pub struct AgentConfig {
     pub max_tokens: u32,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    #[serde(default)]
+    pub compaction: CompactionConfig,
+    #[serde(default)]
+    pub verification: VerificationConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_max_output_chars")]
+    pub max_output_chars: usize,
+    #[serde(default = "default_max_tool_calls_per_turn")]
+    pub max_tool_calls_per_turn: Option<usize>,
+    #[serde(default)]
+    pub max_cached_commands: usize,
+    #[serde(default = "default_max_trace_chars")]
+    pub max_trace_chars: usize,
+}
+
+impl Default for CompactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_output_chars: 8000,
+            max_tool_calls_per_turn: Some(30),
+            max_cached_commands: 50,
+            max_trace_chars: 50000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerificationConfig {
+    /// Whether post-edit verification is enabled (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Maximum time in seconds to wait for the verification command to complete
+    #[serde(default = "default_verification_timeout_secs")]
+    pub timeout_secs: u64,
+    /// Mapping of language name to verification command.
+    /// Defaults use stdlib-only tools. Users can override per-language.
+    #[serde(default = "default_verification_commands")]
+    pub commands: HashMap<String, Vec<String>>,
+}
+
+impl Default for VerificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            timeout_secs: 30,
+            commands: default_verification_commands(),
+        }
+    }
+}
+
+fn default_verification_timeout_secs() -> u64 {
+    30
+}
+
+fn default_verification_commands() -> HashMap<String, Vec<String>> {
+    let mut commands = HashMap::new();
+    commands.insert("rust".to_string(), vec!["cargo".into(), "check".into()]);
+    commands.insert("go".to_string(), vec!["go".into(), "build".into(), "./...".into()]);
+    commands.insert("python".to_string(), vec!["python".into(), "-m".into(), "py_compile".into()]);
+    commands.insert("typescript".to_string(), vec!["node".into(), "--check".into()]);
+    commands.insert("javascript".to_string(), vec!["node".into(), "--check".into()]);
+    commands.insert("perl".to_string(), vec!["perl".into(), "-c".into()]);
+    commands.insert("ruby".to_string(), vec!["ruby".into(), "-c".into()]);
+    commands.insert("bash".to_string(), vec!["bash".into(), "-n".into()]);
+    commands.insert("php".to_string(), vec!["php".into(), "-l".into()]);
+    commands.insert("lua".to_string(), vec!["luac".into(), "-p".into()]);
+    commands
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_output_chars() -> usize {
+    8000
+}
+
+fn default_max_tool_calls_per_turn() -> Option<usize> {
+    Some(30)
+}
+
+fn default_max_trace_chars() -> usize {
+    50000
 }
 
 fn default_llm_provider() -> AgentProviderConfig {
@@ -78,7 +167,7 @@ fn default_max_tokens() -> u32 {
 }
 
 fn default_temperature() -> f32 {
-    0.3
+    0.0
 }
 
 fn default_enabled_tools() -> Vec<String> {

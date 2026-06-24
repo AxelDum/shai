@@ -69,6 +69,9 @@ struct Cli {
     /// Remove specific tools from the default set (comma-separated)
     #[arg(long)]
     remove: Option<String>,
+    /// Set the LLM sampling temperature (default: 0.0)
+    #[arg(long)]
+    temperature: Option<f32>,
     /// Show version information
     #[arg(short, long)]
     version: bool,
@@ -233,7 +236,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if !messages.is_empty() || cli.list_tools {
                 // Route to fix command with combined messages and global options
-                handle_fix(messages, cli.tools, cli.remove, cli.trace, None).await?;
+                let _ = handle_fix(messages, cli.tools, cli.remove, cli.trace, None, cli.temperature).await;
             } else {
                 // No input, show TUI
                 let restore_id = if cli.latest {
@@ -309,6 +312,7 @@ async fn handle_fix(
     remove: Option<String>,
     trace: bool,
     agent_name: Option<String>,
+    temperature: Option<f32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let initial_trace: Vec<ChatMessage> = prompt
         .into_iter()
@@ -318,8 +322,11 @@ async fn handle_fix(
         })
         .collect();
 
-    AppHeadless::new()
-        .run(initial_trace, tools, remove, trace, agent_name)
+    let mut app = AppHeadless::new();
+    if let Some(temp) = temperature {
+        app.set_temperature(temp);
+    }
+    app.run(initial_trace, tools, remove, trace, agent_name)
         .await
 }
 
@@ -591,7 +598,8 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
             } else {
                 // Prompt provided, run in headless mode
                 let prompt = prompt_args.join(" ");
-                handle_fix(vec![prompt], None, None, false, Some(agent_name.clone())).await?;
+                handle_fix(vec![prompt], None, None, false, Some(agent_name.clone()), None)
+                    .await?;
             }
         }
     }

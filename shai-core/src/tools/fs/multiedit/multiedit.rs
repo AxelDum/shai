@@ -1,5 +1,5 @@
 use super::super::{EditTool, FsOperationLog, FsOperationType};
-use super::structs::MultiEditToolParams;
+use super::structs::{MultiEditToolParams, MultiFileEditToolParams};
 use crate::tools::{tool, ToolResult};
 use serde_json::json;
 use std::collections::HashMap;
@@ -50,6 +50,7 @@ impl MultiEditTool {
                 &edit.old_string,
                 &edit.new_string,
                 edit.replace_all,
+                edit.line_hash.as_deref(),
             ) {
                 Ok((new_content, replacements)) => {
                     current_content = new_content;
@@ -160,6 +161,158 @@ impl MultiEditTool {
             }
             Err(e) => ToolResult::error(format!(
                 "MultiEdit {} failed: {}",
+                if preview { "preview" } else { "" },
+                e
+            )),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MultiFileEditTool {
+    operation_log: Arc<FsOperationLog>,
+    edit_tool: EditTool,
+}
+
+impl MultiFileEditTool {
+    pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
+        Self::with_context_lines(operation_log, 3)
+    }
+
+    pub fn with_context_lines(operation_log: Arc<FsOperationLog>, context_lines: usize) -> Self {
+        let edit_tool = EditTool::with_context_lines(operation_log.clone(), context_lines);
+        Self {
+            operation_log,
+            edit_tool,
+        }
+    }
+
+    async fn perform_multi_file_edit(
+        &self,
+        params: &MultiFileEditToolParams,
+        preview: bool,
+    ) -> Result<String, String> {
+        // Phase 1: Validate all files have been read
+        for file_edit in &params.files {
+            self.operation_log
+                .validate_edit_permission(&file_edit.file_path)
+                .await?;
+        }
+
+        // Phase 2: Apply all edits in memory
+        let mut staged_writes: Vec<(String, String)> = Vec::new();
+        let mut diffs = Vec::new();
+
+        for file_edit in &params.files {
+            let path = Path::new(&file_edit.file_path);
+            if !path.exists() {
+                return Err(format!("File does not exist: {}", file_edit.file_path));
+            }
+
+            let mut current_content =
+                fs::read_to_string(path).map_err(|e| e.to_string())?;
+            let original_content = current_content.clone();
+
+            for (index, edit) in file_edit.edits.iter().enumerate() {
+                match self.edit_tool.perform_edit_on_content(
+                    &current_content,
+                    &edit.old_string,
+                    &edit.new_string,
+                    edit.replace_all,
+                    edit.line_hash.as_deref(),
+                ) {
+                    Ok((new_content, _replacements)) => {
+                        current_content = new_content;
+                    }
+                    Err(error) => {
+                        return Err(format!(
+                            "File '{}', Edit #{}: {}",
+                            file_edit.file_path,
+                            index + 1,
+                            error
+                        ));
+                    }
+                }
+            }
+
+            let diff = self.edit_tool.myers_diff(&original_content, &current_content);
+            diffs.push(diff);
+            staged_writes.push((file_edit.file_path.clone(), current_content));
+        }
+
+        // Phase 3: Write all files (only after all edits succeeded)
+        if !preview {
+            for (file_path, content) in &staged_writes {
+                self.edit_tool.commit_edit(file_path, content)?;
+            }
+        }
+
+        // Phase 4: Log all operations
+        if !preview {
+            for file_edit in &params.files {
+                self.operation_log
+                    .log_operation(FsOperationType::MultiEdit, file_edit.file_path.clone())
+                    .await;
+            }
+        }
+
+        let combined_diff = diffs.join("\n\n");
+        Ok(combined_diff)
+    }
+}
+
+#[tool(name = "multifileedit", description = r#"Executes find-and-replace operations across multiple files in one atomic transaction. All edits are applied in memory first; if any edit fails, no files are modified.
+
+**Parameters:**
+- `files`: Array of `{ file_path: string, edits: [{ old_string: string, new_string: string, replace_all?: bool }] }`
+
+**Critical:**
+- Every file must have been read first using the `read` tool.
+- Edits within each file are applied sequentially.
+- The entire operation is atomic — if any edit fails, no files are modified."#, capabilities = [ToolCapability::Read, ToolCapability::Write])]
+impl MultiFileEditTool {
+    async fn execute_preview(&self, params: MultiFileEditToolParams) -> Option<ToolResult> {
+        Some(self.execute_internal(params, true).await)
+    }
+
+    async fn execute(&self, params: MultiFileEditToolParams) -> ToolResult {
+        self.execute_internal(params, false).await
+    }
+
+    async fn execute_internal(&self, params: MultiFileEditToolParams, preview: bool) -> ToolResult {
+        if params.files.is_empty() {
+            return ToolResult::error("At least one file edit is required".to_string());
+        }
+
+        match self.perform_multi_file_edit(&params, preview).await {
+            Ok(diff) => {
+                let mut meta = HashMap::new();
+                meta.insert("file_count".to_string(), json!(params.files.len()));
+                meta.insert(
+                    "total_edits".to_string(),
+                    json!(params.files.iter().map(|f| f.edits.len()).sum::<usize>()),
+                );
+                meta.insert("preview_mode".to_string(), json!(preview));
+
+                let file_details: Vec<serde_json::Value> = params
+                    .files
+                    .iter()
+                    .map(|f| {
+                        json!({
+                            "file_path": f.file_path,
+                            "edit_count": f.edits.len(),
+                        })
+                    })
+                    .collect();
+                meta.insert("files".to_string(), json!(file_details));
+
+                ToolResult::Success {
+                    output: diff,
+                    metadata: Some(meta),
+                }
+            }
+            Err(e) => ToolResult::error(format!(
+                "MultiFileEdit {} failed: {}",
                 if preview { "preview" } else { "" },
                 e
             )),

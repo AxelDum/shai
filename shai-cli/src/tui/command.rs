@@ -26,6 +26,13 @@ impl App<'_> {
             ),
             (
                 (
+                    "/temp".to_string(),
+                    "set the sampling temperature (e.g. /temp 0.3)".to_string(),
+                ),
+                vec!["temperature".to_string()],
+            ),
+            (
+                (
                     "/tokens".to_string(),
                     "display token usage (input/output)".to_string(),
                 ),
@@ -124,11 +131,50 @@ impl App<'_> {
                     }
                 }
             }
+            "/temp" => {
+                if let Some(ref agent) = self.agent {
+                    match args.into_iter().next() {
+                        Some(temp_str) => {
+                            match temp_str.parse::<f32>() {
+                                Ok(temp) => {
+                                    match agent.controller.set_temperature(temp).await {
+                                        Ok(temp) => {
+                                            self.input.alert_msg(
+                                                &format!("Temperature set to {:.1}", temp),
+                                                Duration::from_secs(2),
+                                            );
+                                        }
+                                        Err(e) => {
+                                            self.input.alert_msg(
+                                                &format!("Failed to set temperature: {}", e),
+                                                Duration::from_secs(3),
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(_) => {
+                                    self.input.alert_msg(
+                                        "Usage: /temp <float>",
+                                        Duration::from_secs(3),
+                                    );
+                                }
+                            }
+                        }
+                        None => {
+                            self.input.alert_msg(
+                                "Usage: /temp <float>",
+                                Duration::from_secs(3),
+                            );
+                        }
+                    }
+                }
+            }
             "/tokens" => {
                 let msg = format!(
-                    "Token Usage - Input: {}, Output: {}, Total: {}",
+                    "Token Usage - Input: {}, Output: {}, Cached: {}, Total: {}",
                     self.total_input_tokens,
                     self.total_output_tokens,
+                    self.total_cached_tokens,
                     self.total_input_tokens + self.total_output_tokens
                 );
                 self.input.alert_msg(&msg, Duration::from_secs(5));

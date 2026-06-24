@@ -25,6 +25,7 @@ pub enum FsOperationType {
 pub struct FsOperationLog {
     operations: RwLock<Vec<FsOperation>>,
     read_files: RwLock<HashSet<String>>, // Tracks which files have been read
+    edited_files: RwLock<Vec<String>>, // Files edited since last verification
 }
 
 impl FsOperationLog {
@@ -33,6 +34,7 @@ impl FsOperationLog {
         Self {
             operations: RwLock::new(Vec::new()),
             read_files: RwLock::new(HashSet::new()),
+            edited_files: RwLock::new(Vec::new()),
         }
     }
 
@@ -54,6 +56,9 @@ impl FsOperationLog {
         if operation_type == FsOperationType::Read {
             let mut read_files = self.read_files.write().await;
             read_files.insert(file_path);
+        } else if operation_type == FsOperationType::Edit || operation_type == FsOperationType::MultiEdit {
+            let mut edited = self.edited_files.write().await;
+            edited.push(file_path);
         }
     }
 
@@ -72,6 +77,13 @@ impl FsOperationLog {
             ));
         }
         Ok(())
+    }
+
+    /// Drain and return the list of files edited since the last call.
+    /// Used by the verification system to know which files were touched.
+    pub async fn drain_edited_files(&self) -> Vec<String> {
+        let mut edited = self.edited_files.write().await;
+        std::mem::take(&mut *edited)
     }
 
     /// Get all operations for a specific file
@@ -105,6 +117,10 @@ impl FsOperationLog {
         {
             let mut read_files = self.read_files.write().await;
             read_files.clear();
+        }
+        {
+            let mut edited = self.edited_files.write().await;
+            edited.clear();
         }
     }
 

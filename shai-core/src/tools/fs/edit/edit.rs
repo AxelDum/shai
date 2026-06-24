@@ -1,5 +1,6 @@
 use super::super::{FsOperationLog, FsOperationType};
 use super::structs::EditToolParams;
+use crate::tools::fs::hash::compute_line_hash;
 use crate::tools::{tool, ToolResult};
 use serde_json::json;
 use similar::{ChangeTag, TextDiff};
@@ -156,7 +157,32 @@ impl EditTool {
         old_string: &str,
         new_string: &str,
         replace_all: bool,
+        line_hash: Option<&str>,
     ) -> Result<(String, usize), String> {
+        if let Some(hash) = line_hash {
+            let lines: Vec<&str> = content.lines().collect();
+            let mut replacements = 0;
+            let mut new_lines: Vec<String> = Vec::new();
+
+            for line in &lines {
+                if compute_line_hash(line) == hash && (replace_all || replacements == 0) {
+                    new_lines.push(new_string.to_string());
+                    replacements += 1;
+                } else {
+                    new_lines.push(line.to_string());
+                }
+            }
+
+            if replacements == 0 {
+                return Err(format!(
+                    "Line hash '{}' not found in file (file may have changed)",
+                    hash
+                ));
+            }
+
+            return Ok((new_lines.join("\n"), replacements));
+        }
+
         // Check if the old_string exists in the content
         if !content.contains(old_string) {
             return Err("Pattern not found in file".to_string());
@@ -200,6 +226,7 @@ impl EditTool {
             &params.old_string,
             &params.new_string,
             params.replace_all,
+            params.line_hash.as_deref(),
         )?;
 
         // Generate proper diff using Myers' algorithm
@@ -238,8 +265,8 @@ impl EditTool {
     }
 
     async fn execute_internal(&self, params: EditToolParams, preview: bool) -> ToolResult {
-        // Validate that old_string and new_string are different
-        if params.old_string == params.new_string {
+        // Validate that old_string and new_string are different (skip when using line_hash)
+        if params.line_hash.is_none() && params.old_string == params.new_string {
             return ToolResult::error("old_string and new_string cannot be the same".to_string());
         }
 

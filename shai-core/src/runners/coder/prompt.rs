@@ -39,6 +39,9 @@ Do not commit changes to version control unless explicitly asked to do so by the
 
 **Proactiveness**
 You are allowed to be proactive and take initiative that are aligned with the user intent. For instance if the user asks you to make a function, you can proactively follow your implementation with a call to compile / test the project to make sure that your change were correct. You must however avoid proactively taking actions that are out of scope or unnecessary. For instance if the user asks you to modify a function, you should not immediately assume that this function should be used everywhere. You have to strike a balance between helpfulness, autonomy while also keeping the user in the loop.
+
+**Batch Error Fixes**
+When fixing compilation or test errors, address ALL errors in a single pass before re-running the build or test command. Read all error messages, fix every issue, then verify with a single check. Avoid running the same command repeatedly after each individual fix.
 "#;
 
 static CODER_ENV: &str = r#"
@@ -61,16 +64,68 @@ static CODER_PROMPT: &str = r#"{{CODER_GUIDELINE}}
 {{CODER_ENV}}
 
 {{SKILLS}}"#;
+/// Compact AGENTS.md content by extracting headers and first paragraph under each section.
+/// Code blocks are stripped to reduce token overhead while preserving the key context.
+fn compact_agents_content(content: &str) -> String {
+    let mut sections: Vec<(String, String)> = Vec::new();
+    let mut current_header: Option<String> = None;
+    let mut current_body = String::new();
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if !in_code_block && trimmed.starts_with('#') {
+            if let Some(header) = current_header.take() {
+                sections.push((header, std::mem::take(&mut current_body)));
+            }
+            current_header = Some(trimmed.trim_start_matches('#').trim().to_string());
+        } else {
+            current_body.push_str(line);
+            current_body.push('\n');
+        }
+    }
+    if let Some(header) = current_header {
+        sections.push((header, std::mem::take(&mut current_body)));
+    }
+
+    let mut result = String::new();
+    for (header, body) in sections {
+        let body_trimmed = body.trim();
+        if body_trimmed.is_empty() {
+            continue;
+        }
+        result.push_str(&format!("## {}\n", header));
+        let mut first_para_done = false;
+        for line in body_trimmed.lines() {
+            if line.trim().is_empty() {
+                if first_para_done {
+                    break;
+                }
+                continue;
+            }
+            result.push_str(line);
+            result.push('\n');
+            first_para_done = true;
+        }
+        result.push('\n');
+    }
+    result.trim_end().to_string()
+}
+
 /// Load AGENTS.md from the git root (or CWD if not in a git repo).
 /// Returns empty string if not found or on error.
 fn load_agents_content() -> String {
     let base = find_git_root().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let agents_path = base.join("AGENTS.md");
     match fs::read_to_string(&agents_path) {
-        Ok(content) => content,
+        Ok(content) => compact_agents_content(&content),
         Err(e) => {
             if agents_path.exists() {
-                eprintln!("\x1b[2m⚠ Failed to read AGENTS.md: {}\\x1b[0m", e);
+                eprintln!("\x1b[2m\u{26a0} Failed to read AGENTS.md: {}\\x1b[0m", e);
             }
             String::new()
         }

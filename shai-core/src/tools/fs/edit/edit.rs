@@ -265,10 +265,7 @@ impl EditTool {
             let path = Path::new(&file_edit.file_path);
 
             if !path.exists() {
-                return ToolResult::error(format!(
-                    "File does not exist: {}",
-                    file_edit.file_path
-                ));
+                return ToolResult::error(format!("File does not exist: {}", file_edit.file_path));
             }
 
             let mut current_content = match fs::read_to_string(path) {

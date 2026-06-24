@@ -15,8 +15,12 @@ impl AgentCore {
                 if !any_denied {
                     let edited_files = self.fs_operation_log.drain_edited_files().await;
                     if !edited_files.is_empty() {
-                        if let Some(diagnostics) =
-                            run_verification(&edited_files, &self.working_dir, &self.verification_config).await
+                        if let Some(diagnostics) = run_verification(
+                            &edited_files,
+                            &self.working_dir,
+                            &self.verification_config,
+                        )
+                        .await
                         {
                             self.trace.write().await.push(ChatMessage::Tool {
                                 tool_call_id: "verification".to_string(),

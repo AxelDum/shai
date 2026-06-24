@@ -18,14 +18,12 @@ pub struct ReadTool {
 
 impl ReadTool {
     pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
-        let language_registry = Arc::new(
-            LanguageRegistry::new().unwrap_or_else(|e| {
-                tracing::error!("Failed to initialize language registry: {}", e);
-                // Return an empty registry that reports all files as unsupported
-                // This should never happen in practice since all grammars are compiled in
-                panic!("Failed to initialize language registry: {}", e)
-            }),
-        );
+        let language_registry = Arc::new(LanguageRegistry::new().unwrap_or_else(|e| {
+            tracing::error!("Failed to initialize language registry: {}", e);
+            // Return an empty registry that reports all files as unsupported
+            // This should never happen in practice since all grammars are compiled in
+            panic!("Failed to initialize language registry: {}", e)
+        }));
         Self {
             operation_log,
             language_registry,
@@ -73,9 +71,10 @@ impl ReadTool {
                     .collect();
 
                 match lines {
-                    Ok(filtered_lines) => {
-                        Ok(Self::format_lines(&filtered_lines, params.show_line_numbers))
-                    }
+                    Ok(filtered_lines) => Ok(Self::format_lines(
+                        &filtered_lines,
+                        params.show_line_numbers,
+                    )),
                     Err(e) => Err(e),
                 }
             }
@@ -95,9 +94,10 @@ impl ReadTool {
                     .collect();
 
                 match lines {
-                    Ok(filtered_lines) => {
-                        Ok(Self::format_lines(&filtered_lines, params.show_line_numbers))
-                    }
+                    Ok(filtered_lines) => Ok(Self::format_lines(
+                        &filtered_lines,
+                        params.show_line_numbers,
+                    )),
                     Err(e) => Err(e),
                 }
             }
@@ -117,9 +117,10 @@ impl ReadTool {
                     .collect();
 
                 match lines {
-                    Ok(filtered_lines) => {
-                        Ok(Self::format_lines(&filtered_lines, params.show_line_numbers))
-                    }
+                    Ok(filtered_lines) => Ok(Self::format_lines(
+                        &filtered_lines,
+                        params.show_line_numbers,
+                    )),
                     Err(e) => Err(e),
                 }
             }
@@ -195,11 +196,17 @@ impl ReadTool {
             let path = Path::new(&file_spec.path);
 
             if !path.exists() {
-                outputs.push(format!("=== {} ===\n[Error: File does not exist]", file_spec.path));
+                outputs.push(format!(
+                    "=== {} ===\n[Error: File does not exist]",
+                    file_spec.path
+                ));
                 continue;
             }
             if !path.is_file() {
-                outputs.push(format!("=== {} ===\n[Error: Path is not a file]", file_spec.path));
+                outputs.push(format!(
+                    "=== {} ===\n[Error: Path is not a file]",
+                    file_spec.path
+                ));
                 continue;
             }
 

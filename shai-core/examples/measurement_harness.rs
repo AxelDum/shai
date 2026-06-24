@@ -7,7 +7,9 @@ use std::time::Instant;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use shai_core::agent::events::AgentEventHandler;
-use shai_core::agent::{Agent, AgentController, AgentEvent, AgentRequest, AgentResponse, UserResponse};
+use shai_core::agent::{
+    Agent, AgentController, AgentEvent, AgentRequest, AgentResponse, UserResponse,
+};
 use shai_core::runners::coder::coder::coder;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -126,13 +128,23 @@ impl MetricsHandler {
 impl AgentEventHandler for MetricsHandler {
     async fn handle_event(&self, event: AgentEvent) {
         match event {
-            AgentEvent::TokenUsage { input_tokens, output_tokens, cached_tokens } => {
+            AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+                cached_tokens,
+            } => {
                 let mut s = self.state.lock().unwrap();
                 s.pending_input_tokens += input_tokens;
                 s.pending_output_tokens += output_tokens;
                 s.pending_cached_tokens += cached_tokens;
             }
-            AgentEvent::ToolCallCompleted { duration, call, result, original_bytes, compacted_bytes } => {
+            AgentEvent::ToolCallCompleted {
+                duration,
+                call,
+                result,
+                original_bytes,
+                compacted_bytes,
+            } => {
                 let _ = result;
                 let mut s = self.state.lock().unwrap();
                 s.tool_calls.push(ToolCallMetrics {
@@ -143,7 +155,10 @@ impl AgentEventHandler for MetricsHandler {
                 });
             }
             AgentEvent::UserInputRequired { request_id, .. } => {
-                let _ = self.controller.response_user_query(request_id, UserResponse::Cancel).await;
+                let _ = self
+                    .controller
+                    .response_user_query(request_id, UserResponse::Cancel)
+                    .await;
             }
             _ => {
                 eprintln!("⚡ Event: {:?}", event);
@@ -159,7 +174,9 @@ fn parse_args() -> (String, bool, Option<String>) {
         eprintln!();
         eprintln!("Options:");
         eprintln!("  --clean             Remove fixture directory after run (default: keep)");
-        eprintln!("  --output-dir <dir>  Use <dir> as the fixture directory instead of generating one");
+        eprintln!(
+            "  --output-dir <dir>  Use <dir> as the fixture directory instead of generating one"
+        );
         eprintln!();
         eprintln!("Script format:");
         eprintln!("  {{");
@@ -198,7 +215,10 @@ fn parse_args() -> (String, bool, Option<String>) {
     (script_path, clean, output_dir)
 }
 
-fn setup_fixture_with_cwd(setup_cmd: &str, output_dir: Option<&str>) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn setup_fixture_with_cwd(
+    setup_cmd: &str,
+    output_dir: Option<&str>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let fixture_dir = if let Some(dir) = output_dir {
         PathBuf::from(dir)
     } else {
@@ -221,9 +241,13 @@ fn setup_fixture_with_cwd(setup_cmd: &str, output_dir: Option<&str>) -> Result<P
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
             "Setup command failed (exit {}):\n{}",
-            output.status.code().map_or("?".to_string(), |c| c.to_string()),
+            output
+                .status
+                .code()
+                .map_or("?".to_string(), |c| c.to_string()),
             stderr
-        ).into());
+        )
+        .into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -271,7 +295,11 @@ fn run_verification(
                     "  {} {} ({})",
                     if passed { "✓" } else { "✗" },
                     cmd.command,
-                    if passed { "passed".to_string() } else { format!("exit code {:?} != {}", exit_code, expected) }
+                    if passed {
+                        "passed".to_string()
+                    } else {
+                        format!("exit code {:?} != {}", exit_code, expected)
+                    }
                 );
 
                 results.push(VerificationResult {
@@ -350,8 +378,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string())
     });
-    let script_category = script.category.clone().unwrap_or_else(|| "unknown".to_string());
-    let script_difficulty = script.difficulty.clone().unwrap_or_else(|| "unknown".to_string());
+    let script_category = script
+        .category
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let script_difficulty = script
+        .difficulty
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
 
     let fixture_dir = if let Some(ref cmd) = setup_cmd {
         Some(setup_fixture_with_cwd(cmd, output_dir.as_deref())?)
@@ -369,14 +403,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("░ Initializing git repo...");
         fs::write(
             working_dir.join(".gitignore"),
-            "runtime.log\nsession.log\ndiff.patch\n"
+            "runtime.log\nsession.log\ndiff.patch\n",
         )?;
 
-        let _ = Command::new("git").args(["init"]).current_dir(working_dir).output();
-        let _ = Command::new("git").args(["add", "-A"]).current_dir(working_dir).output();
+        let _ = Command::new("git")
+            .args(["init"])
+            .current_dir(working_dir)
+            .output();
+        let _ = Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(working_dir)
+            .output();
 
         let commit = Command::new("git")
-            .args(["-c", "commit.gpgsign=false", "commit", "-m", "baseline", "--allow-empty"])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-m",
+                "baseline",
+                "--allow-empty",
+            ])
             .env("GIT_AUTHOR_NAME", "harness")
             .env("GIT_AUTHOR_EMAIL", "harness@harness")
             .env("GIT_COMMITTER_NAME", "harness")
@@ -394,17 +441,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     {
-        let log_dir = fixture_dir.as_ref()
+        let log_dir = fixture_dir
+            .as_ref()
             .map(|d| d.as_path())
             .unwrap_or_else(|| std::path::Path::new("."));
         let log_writer = tracing_appender::rolling::never(log_dir, "runtime.log");
         let _ = tracing_subscriber::registry()
             .with(tracing_subscriber::EnvFilter::new(
-                "shai_core=debug,brain::coder=debug,agent=debug,misc=debug"
+                "shai_core=debug,brain::coder=debug,agent=debug,misc=debug",
             ))
-            .with(tracing_subscriber::fmt::layer()
-                .with_writer(log_writer)
-                .with_ansi(false)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_writer(log_writer)
+                    .with_ansi(false),
             )
             .try_init();
     }
@@ -416,8 +465,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("░ Goal: {}", goal);
     eprintln!("░ Prompts: {}", prompts.len());
 
-    let (llm, model) = shai_core::config::config::ShaiConfig::get_llm().await
-        .map_err(|e| format!("Failed to get LLM from config: {}. Run `shai auth` first.", e))?;
+    let (llm, model) = shai_core::config::config::ShaiConfig::get_llm()
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to get LLM from config: {}. Run `shai auth` first.",
+                e
+            )
+        })?;
     eprintln!("░ Model: {} ({})", model, llm.provider().name());
 
     let shared_state = Arc::new(Mutex::new(MetricsState {
@@ -438,9 +493,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler = MetricsHandler::new(shared_state.clone(), controller.clone());
     let mut agent = agent.with_event_handler(handler);
 
-    let handle = tokio::spawn(async move {
-        agent.run().await
-    });
+    let handle = tokio::spawn(async move { agent.run().await });
 
     match controller.send(AgentRequest::Sudo(Some(true))).await {
         Ok(AgentResponse::SudoStatus { enabled }) => eprintln!("░ Sudo enabled: {}", enabled),
@@ -468,15 +521,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let output_tokens = std::mem::take(&mut s.pending_output_tokens);
         let cached_tokens = std::mem::take(&mut s.pending_cached_tokens);
         let turn = s.current_turn;
-        let duration_ms = start.map(|inst| inst.elapsed().as_millis() as u64).unwrap_or(0);
+        let duration_ms = start
+            .map(|inst| inst.elapsed().as_millis() as u64)
+            .unwrap_or(0);
         s.turns.push(TurnMetrics {
             turn,
-        prompt,
-        input_tokens,
-        output_tokens,
-        cached_tokens,
-        tool_calls,
-        duration_ms,
+            prompt,
+            input_tokens,
+            output_tokens,
+            cached_tokens,
+            tool_calls,
+            duration_ms,
         });
         s.current_turn += 1;
     };
@@ -485,7 +540,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("\n> [Turn 0] {}", goal);
     let _ = controller.send_user_input(goal.clone()).await;
     match controller.wait_turn(Some(turn_timeout_ms)).await {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(e) => eprintln!("⚠ Turn 0 timed out: {}", e),
     }
     flush_turn(goal.clone());
@@ -495,7 +550,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("> [Turn {}] {}", i + 1, prompt);
         let _ = controller.send_user_input(prompt.clone()).await;
         match controller.wait_turn(Some(turn_timeout_ms)).await {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("⚠ Turn {} timed out: {}", i + 1, e),
         }
         flush_turn(prompt.clone());
@@ -512,8 +567,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_output: u32 = turns.iter().map(|t| t.output_tokens).sum();
     let total_cached: u32 = turns.iter().map(|t| t.cached_tokens).sum();
     let total_tool_calls: usize = turns.iter().map(|t| t.tool_calls.len()).sum();
-    let total_tool_output_bytes: u64 = turns.iter().map(|t| t.tool_calls.iter().map(|tc| tc.original_bytes).sum::<u64>()).sum();
-    let total_compacted_bytes: u64 = turns.iter().map(|t| t.tool_calls.iter().map(|tc| tc.compacted_bytes).sum::<u64>()).sum();
+    let total_tool_output_bytes: u64 = turns
+        .iter()
+        .map(|t| t.tool_calls.iter().map(|tc| tc.original_bytes).sum::<u64>())
+        .sum();
+    let total_compacted_bytes: u64 = turns
+        .iter()
+        .map(|t| {
+            t.tool_calls
+                .iter()
+                .map(|tc| tc.compacted_bytes)
+                .sum::<u64>()
+        })
+        .sum();
     let cache_hit_rate = if total_input > 0 {
         total_cached as f64 / total_input as f64
     } else {
@@ -525,7 +591,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         1.0
     };
 
-    let fixture_path = fixture_dir.as_ref()
+    let fixture_path = fixture_dir
+        .as_ref()
         .map(|p| p.to_string_lossy().to_string());
 
     let verification_results = if let Some(ref working_dir) = fixture_dir {
@@ -561,16 +628,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("<<<HARNESS_JSON_BEGIN>>>\n{}\n<<<HARNESS_JSON_END>>>", json);
 
     eprintln!("\n░ Session complete");
-    eprintln!("░ Total input tokens:  {} ({} cached, {:.1}% hit rate)", total_input, total_cached, cache_hit_rate * 100.0);
+    eprintln!(
+        "░ Total input tokens:  {} ({} cached, {:.1}% hit rate)",
+        total_input,
+        total_cached,
+        cache_hit_rate * 100.0
+    );
     eprintln!("░ Total output tokens: {}", total_output);
-    eprintln!("░ Total tool calls: {} ({} bytes → {} compacted, {:.1}% reduction)", total_tool_calls, total_tool_output_bytes, total_compacted_bytes, (1.0 - compaction_ratio) * 100.0);
+    eprintln!(
+        "░ Total tool calls: {} ({} bytes → {} compacted, {:.1}% reduction)",
+        total_tool_calls,
+        total_tool_output_bytes,
+        total_compacted_bytes,
+        (1.0 - compaction_ratio) * 100.0
+    );
     eprintln!("░ Duration: {:.1}s", total_duration_ms as f64 / 1000.0);
 
     if !verification_results.is_empty() {
         let all_passed = verification_results.iter().all(|r| r.passed);
-        eprintln!("░ Verification: {}", if all_passed { "PASSED" } else { "FAILED" });
+        eprintln!(
+            "░ Verification: {}",
+            if all_passed { "PASSED" } else { "FAILED" }
+        );
         for vr in &verification_results {
-            eprintln!("  {} {} (exit {:?})", if vr.passed { "✓" } else { "✗" }, vr.command, vr.exit_code);
+            eprintln!(
+                "  {} {} (exit {:?})",
+                if vr.passed { "✓" } else { "✗" },
+                vr.command,
+                vr.exit_code
+            );
         }
     }
 

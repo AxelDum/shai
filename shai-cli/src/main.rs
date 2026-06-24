@@ -246,7 +246,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if !messages.is_empty() || cli.list_tools {
                 // Route to fix command with combined messages and global options
-                let _ = handle_fix(messages, cli.tools, cli.remove, cli.trace, None, cli.temperature).await;
+                let _ = handle_fix(
+                    messages,
+                    cli.tools,
+                    cli.remove,
+                    cli.trace,
+                    None,
+                    cli.temperature,
+                )
+                .await;
             } else {
                 // No input, show TUI
                 let restore_id = if cli.latest {
@@ -276,7 +284,11 @@ async fn default_config(default_config_url: Option<String>) {
         Err(e) => {
             if let Ok(path) = ShaiConfig::config_path() {
                 if path.exists() {
-                    eprintln!("Warning: failed to parse config at {}: {}", path.display(), e);
+                    eprintln!(
+                        "Warning: failed to parse config at {}: {}",
+                        path.display(),
+                        e
+                    );
                     return;
                 }
             }
@@ -635,8 +647,15 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
             } else {
                 // Prompt provided, run in headless mode
                 let prompt = prompt_args.join(" ");
-                handle_fix(vec![prompt], None, None, false, Some(agent_name.clone()), None)
-                    .await?;
+                handle_fix(
+                    vec![prompt],
+                    None,
+                    None,
+                    false,
+                    Some(agent_name.clone()),
+                    None,
+                )
+                .await?;
             }
         }
     }

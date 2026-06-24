@@ -43,25 +43,120 @@ impl LanguageRegistry {
             };
         }
 
-        register!("rs", "rust", tree_sitter_rust::LANGUAGE.into(), tree_sitter_rust::TAGS_QUERY);
-        register!("py", "python", tree_sitter_python::LANGUAGE.into(), tree_sitter_python::TAGS_QUERY);
-        register!("js", "javascript", tree_sitter_javascript::LANGUAGE.into(), tree_sitter_javascript::TAGS_QUERY);
-        register!("jsx", "javascript", tree_sitter_javascript::LANGUAGE.into(), tree_sitter_javascript::TAGS_QUERY);
-        register!("ts", "typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), tree_sitter_typescript::TAGS_QUERY);
-        register!("tsx", "typescript", tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), tree_sitter_typescript::TAGS_QUERY);
-        register!("go", "go", tree_sitter_go::LANGUAGE.into(), tree_sitter_go::TAGS_QUERY);
-        register!("rb", "ruby", tree_sitter_ruby::LANGUAGE.into(), tree_sitter_ruby::TAGS_QUERY);
-        register!("c", "c", tree_sitter_c::LANGUAGE.into(), tree_sitter_c::TAGS_QUERY);
-        register!("h", "c", tree_sitter_c::LANGUAGE.into(), tree_sitter_c::TAGS_QUERY);
-        register!("cpp", "cpp", tree_sitter_cpp::LANGUAGE.into(), tree_sitter_cpp::TAGS_QUERY);
-        register!("cc", "cpp", tree_sitter_cpp::LANGUAGE.into(), tree_sitter_cpp::TAGS_QUERY);
-        register!("cxx", "cpp", tree_sitter_cpp::LANGUAGE.into(), tree_sitter_cpp::TAGS_QUERY);
-        register!("hpp", "cpp", tree_sitter_cpp::LANGUAGE.into(), tree_sitter_cpp::TAGS_QUERY);
-        register!("java", "java", tree_sitter_java::LANGUAGE.into(), tree_sitter_java::TAGS_QUERY);
-        register!("php", "php", tree_sitter_php::LANGUAGE_PHP.into(), tree_sitter_php::TAGS_QUERY);
-        register!("lua", "lua", tree_sitter_lua::LANGUAGE.into(), tree_sitter_lua::TAGS_QUERY);
-        register!("sh", "bash", tree_sitter_bash::LANGUAGE.into(), BASH_TAGS_QUERY);
-        register!("bash", "bash", tree_sitter_bash::LANGUAGE.into(), BASH_TAGS_QUERY);
+        register!(
+            "rs",
+            "rust",
+            tree_sitter_rust::LANGUAGE.into(),
+            tree_sitter_rust::TAGS_QUERY
+        );
+        register!(
+            "py",
+            "python",
+            tree_sitter_python::LANGUAGE.into(),
+            tree_sitter_python::TAGS_QUERY
+        );
+        register!(
+            "js",
+            "javascript",
+            tree_sitter_javascript::LANGUAGE.into(),
+            tree_sitter_javascript::TAGS_QUERY
+        );
+        register!(
+            "jsx",
+            "javascript",
+            tree_sitter_javascript::LANGUAGE.into(),
+            tree_sitter_javascript::TAGS_QUERY
+        );
+        register!(
+            "ts",
+            "typescript",
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            tree_sitter_typescript::TAGS_QUERY
+        );
+        register!(
+            "tsx",
+            "typescript",
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            tree_sitter_typescript::TAGS_QUERY
+        );
+        register!(
+            "go",
+            "go",
+            tree_sitter_go::LANGUAGE.into(),
+            tree_sitter_go::TAGS_QUERY
+        );
+        register!(
+            "rb",
+            "ruby",
+            tree_sitter_ruby::LANGUAGE.into(),
+            tree_sitter_ruby::TAGS_QUERY
+        );
+        register!(
+            "c",
+            "c",
+            tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::TAGS_QUERY
+        );
+        register!(
+            "h",
+            "c",
+            tree_sitter_c::LANGUAGE.into(),
+            tree_sitter_c::TAGS_QUERY
+        );
+        register!(
+            "cpp",
+            "cpp",
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::TAGS_QUERY
+        );
+        register!(
+            "cc",
+            "cpp",
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::TAGS_QUERY
+        );
+        register!(
+            "cxx",
+            "cpp",
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::TAGS_QUERY
+        );
+        register!(
+            "hpp",
+            "cpp",
+            tree_sitter_cpp::LANGUAGE.into(),
+            tree_sitter_cpp::TAGS_QUERY
+        );
+        register!(
+            "java",
+            "java",
+            tree_sitter_java::LANGUAGE.into(),
+            tree_sitter_java::TAGS_QUERY
+        );
+        register!(
+            "php",
+            "php",
+            tree_sitter_php::LANGUAGE_PHP.into(),
+            tree_sitter_php::TAGS_QUERY
+        );
+        register!(
+            "lua",
+            "lua",
+            tree_sitter_lua::LANGUAGE.into(),
+            tree_sitter_lua::TAGS_QUERY
+        );
+        register!(
+            "sh",
+            "bash",
+            tree_sitter_bash::LANGUAGE.into(),
+            BASH_TAGS_QUERY
+        );
+        register!(
+            "bash",
+            "bash",
+            tree_sitter_bash::LANGUAGE.into(),
+            BASH_TAGS_QUERY
+        );
 
         Ok(Self { configs })
     }
@@ -69,9 +164,7 @@ impl LanguageRegistry {
     /// Get the tags configuration for a given file path extension.
     /// Returns None if the file type is not supported.
     pub fn config_for_path(&self, path: &str) -> Option<&TagsConfiguration> {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())?;
+        let ext = Path::new(path).extension().and_then(|e| e.to_str())?;
 
         self.configs.get(ext).map(|entry| &entry.config)
     }
@@ -79,9 +172,7 @@ impl LanguageRegistry {
     /// Get the language name for a given file path extension.
     /// Returns None if the file type is not supported.
     pub fn language_name_for_path(&self, path: &str) -> Option<&str> {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())?;
+        let ext = Path::new(path).extension().and_then(|e| e.to_str())?;
 
         self.configs.get(ext).map(|entry| entry.language_name)
     }

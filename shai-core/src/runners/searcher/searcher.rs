@@ -72,11 +72,7 @@ impl Brain for SearcherBrain {
             .await?;
 
         // stop here if there's no other tool calls
-        if let ChatMessage::Assistant {
-            tool_calls,
-            ..
-        } = &brain_decision
-        {
+        if let ChatMessage::Assistant { tool_calls, .. } = &brain_decision {
             if tool_calls.as_ref().is_none_or(|calls| calls.is_empty()) {
                 return Ok(ThinkerDecision::agent_pause(brain_decision));
             }

@@ -15,6 +15,7 @@ use openai_dive::v1::resources::{
 };
 use regex::Regex;
 use std::sync::LazyLock;
+use tracing::warn;
 
 static THINK_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?s)<think>(.*?)</think>").unwrap());
@@ -292,8 +293,9 @@ impl LlmClient {
 
                     if attempt < max_retries && Self::is_retryable_error(&error) {
                         let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
-                        eprintln!(
-                            "[shai] LLM request failed (attempt {}/{}), retrying in {}ms: {}",
+                        warn!(
+                            target: "shai_llm::client",
+                            "LLM request failed (attempt {}/{}), retrying in {}ms: {}",
                             attempt + 1,
                             max_retries,
                             delay_ms,
@@ -327,8 +329,9 @@ impl LlmClient {
                 Err(error) => {
                     if attempt < max_retries && Self::is_retryable_error(&error) {
                         let delay_ms = Self::RETRY_BASE_DELAY_MS * (1 << attempt);
-                        eprintln!(
-                            "[shai] LLM stream request failed (attempt {}/{}), retrying in {}ms: {}",
+                        warn!(
+                            target: "shai_llm::client",
+                            "LLM stream request failed (attempt {}/{}), retrying in {}ms: {}",
                             attempt + 1,
                             max_retries,
                             delay_ms,

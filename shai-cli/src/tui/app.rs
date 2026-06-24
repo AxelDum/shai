@@ -38,6 +38,7 @@ use std::io::Write;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
+use tracing::{debug, warn};
 
 use super::history::ConversationHistory;
 use super::input::{AgentMode, UserAction};
@@ -145,8 +146,8 @@ impl App<'_> {
         // Run the agent in background
         let handle = tokio::spawn(async move {
             match agent.run().await {
-                Ok(result) => eprintln!("Agent completed: {:?}", result),
-                Err(error) => eprintln!("Agent failed: {:?}", error),
+                Ok(result) => debug!(target: "agent::loop", "Agent completed: {:?}", result),
+                Err(error) => warn!(target: "agent::loop", "Agent failed: {:?}", error),
             }
         });
 
@@ -226,7 +227,7 @@ impl App<'_> {
                     if let Err(e) = terminal.insert_before(line_count, |buf| {
                         wrapped.render(buf.area, buf);
                     }) {
-                        eprintln!("[shai] Failed to insert restored trace: {}", e);
+                        warn!(target: "agent::loop", "Failed to insert restored trace: {}", e);
                     }
                     self.history.add_text(&text);
                 }
@@ -340,7 +341,6 @@ impl App<'_> {
             self.total_cached_tokens += cached_tokens;
             self.status_bar
                 .set_tokens(self.total_input_tokens, self.total_output_tokens);
-
         }
 
         // Handle error events - display inline in red

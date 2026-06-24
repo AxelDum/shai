@@ -42,7 +42,7 @@ End of file"#;
             line_start: None,
             line_end: None,
             show_line_numbers: false,
-                                outline: false,
+            outline: false,
         }],
     };
 
@@ -51,7 +51,10 @@ End of file"#;
         crate::tools::ToolResult::Success { output, .. } => {
             assert!(output.contains("Hello World"), "Should contain Hello World");
             assert!(output.contains("End of file"), "Should contain End of file");
-            assert!(output.contains("With multiple lines"), "Should contain all lines");
+            assert!(
+                output.contains("With multiple lines"),
+                "Should contain all lines"
+            );
         }
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool should succeed, got error: {}", error);
@@ -84,20 +87,35 @@ async fn test_read_tool_line_range_reading() {
             line_start: Some(5),
             line_end: Some(10),
             show_line_numbers: true,
-                                outline: false,
+            outline: false,
         }],
     };
 
     let result_range = read_tool.execute(params_range, None).await;
     match result_range {
         crate::tools::ToolResult::Success { output, .. } => {
-            assert!(output.contains("Line 5: Content for line 5"), "Should contain line 5");
-            assert!(output.contains("Line 10: Content for line 10"), "Should contain line 10");
-            assert!(!output.contains("Line 4: Content for line 4"), "Should not contain line 4");
-            assert!(!output.contains("Line 11: Content for line 11"), "Should not contain line 11");
+            assert!(
+                output.contains("Line 5: Content for line 5"),
+                "Should contain line 5"
+            );
+            assert!(
+                output.contains("Line 10: Content for line 10"),
+                "Should contain line 10"
+            );
+            assert!(
+                !output.contains("Line 4: Content for line 4"),
+                "Should not contain line 4"
+            );
+            assert!(
+                !output.contains("Line 11: Content for line 11"),
+                "Should not contain line 11"
+            );
 
             let line_count = output.lines().count();
-            assert_eq!(line_count, 7, "Should have exactly 7 lines (header + 5-10 inclusive)");
+            assert_eq!(
+                line_count, 7,
+                "Should have exactly 7 lines (header + 5-10 inclusive)"
+            );
         }
         crate::tools::ToolResult::Error { error, .. } => {
             panic!("Read tool range should succeed, got error: {}", error);
@@ -119,14 +137,17 @@ async fn test_read_tool_nonexistent_file() {
             line_start: None,
             line_end: None,
             show_line_numbers: false,
-                                outline: false,
+            outline: false,
         }],
     };
 
     let result = read_tool.execute(params, None).await;
     match result {
         crate::tools::ToolResult::Success { output, .. } => {
-            assert!(output.contains("does not exist"), "Should report file does not exist");
+            assert!(
+                output.contains("does not exist"),
+                "Should report file does not exist"
+            );
         }
         crate::tools::ToolResult::Error { .. } => {
             // Also acceptable
@@ -142,9 +163,7 @@ async fn test_read_tool_empty_params() {
     let log = Arc::new(FsOperationLog::new());
     let read_tool = ReadTool::new(log);
 
-    let params = ReadToolParams {
-        files: vec![],
-    };
+    let params = ReadToolParams { files: vec![] };
 
     let result = read_tool.execute(params, None).await;
     assert!(result.is_error());
@@ -168,14 +187,14 @@ async fn test_read_tool_multi_file() {
                 line_start: None,
                 line_end: None,
                 show_line_numbers: true,
-                                    outline: false,
+                outline: false,
             },
             ReadFileSpec {
                 path: file_b.to_string_lossy().to_string(),
                 line_start: None,
                 line_end: None,
                 show_line_numbers: true,
-                                    outline: false,
+                outline: false,
             },
         ],
     };
@@ -213,14 +232,14 @@ async fn test_read_tool_mixed_existence() {
                 line_start: None,
                 line_end: None,
                 show_line_numbers: false,
-                                    outline: false,
+                outline: false,
             },
             ReadFileSpec {
                 path: "/nonexistent/file.txt".to_string(),
                 line_start: None,
                 line_end: None,
                 show_line_numbers: false,
-                                    outline: false,
+                outline: false,
             },
         ],
     };
@@ -241,7 +260,9 @@ fn test_find_exclude_patterns_config() {
     assert!(!config.find_exclude_patterns.is_empty());
     assert!(config.find_exclude_patterns.contains(&".git".to_string()));
     assert!(config.find_exclude_patterns.contains(&"target".to_string()));
-    assert!(config.find_exclude_patterns.contains(&"node_modules".to_string()));
+    assert!(config
+        .find_exclude_patterns
+        .contains(&"node_modules".to_string()));
 }
 
 #[test]

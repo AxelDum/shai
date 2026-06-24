@@ -1,4 +1,4 @@
-use tree_sitter_tags::{TagsContext, TagsConfiguration};
+use tree_sitter_tags::{TagsConfiguration, TagsContext};
 
 /// A single extracted symbol from a source file.
 #[derive(Debug, Clone)]
@@ -12,10 +12,7 @@ pub struct Symbol {
 /// Extract symbols from source code using a pre-loaded tags configuration.
 ///
 /// Returns an empty vector if parsing fails or no symbols are found.
-pub fn extract_symbols(
-    content: &str,
-    config: &TagsConfiguration,
-) -> Vec<Symbol> {
+pub fn extract_symbols(content: &str, config: &TagsConfiguration) -> Vec<Symbol> {
     let mut context = TagsContext::new();
     let source = content.as_bytes();
 
@@ -121,7 +118,7 @@ fn main() {
 "#;
 
         let symbols = extract_symbols(source, config);
-        assert!(! symbols.is_empty(), "should extract at least one symbol");
+        assert!(!symbols.is_empty(), "should extract at least one symbol");
     }
 
     #[test]

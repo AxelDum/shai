@@ -2,33 +2,31 @@ use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 
 /// Estimate the total character length of a trace by summing message content lengths.
 fn estimate_trace_chars(trace: &[ChatMessage]) -> usize {
-    trace.iter().map(|msg| {
-        let text = match msg {
-            ChatMessage::System { content, .. }
-            | ChatMessage::User { content, .. }
-            | ChatMessage::Tool { content, .. } => {
-                match content {
+    trace
+        .iter()
+        .map(|msg| {
+            let text = match msg {
+                ChatMessage::System { content, .. }
+                | ChatMessage::User { content, .. }
+                | ChatMessage::Tool { content, .. } => match content {
                     ChatMessageContent::Text(s) => s.len(),
                     _ => 0,
-                }
-            }
-            ChatMessage::Assistant { content, .. } => {
-                content.as_ref().and_then(|c| {
-                    match c {
+                },
+                ChatMessage::Assistant { content, .. } => content
+                    .as_ref()
+                    .and_then(|c| match c {
                         ChatMessageContent::Text(s) => Some(s.len()),
                         _ => None,
-                    }
-                }).unwrap_or(0)
-            }
-            ChatMessage::Developer { content, .. } => {
-                match content {
+                    })
+                    .unwrap_or(0),
+                ChatMessage::Developer { content, .. } => match content {
                     ChatMessageContent::Text(s) => s.len(),
                     _ => 0,
-                }
-            }
-        };
-        text
-    }).sum()
+                },
+            };
+            text
+        })
+        .sum()
 }
 
 /// Compact older tool results in the trace when it exceeds `max_chars`.
@@ -36,10 +34,7 @@ fn estimate_trace_chars(trace: &[ChatMessage]) -> usize {
 /// Keeps the most recent `keep_recent` messages intact. For older `ChatMessage::Tool`
 /// entries, replaces the content with `[compacted]`. Returns true if any compaction
 /// was performed.
-pub fn compact_trace_if_needed(
-    trace: &mut Vec<ChatMessage>,
-    max_chars: usize,
-) -> bool {
+pub fn compact_trace_if_needed(trace: &mut Vec<ChatMessage>, max_chars: usize) -> bool {
     let total = estimate_trace_chars(trace);
     if total <= max_chars {
         return false;
@@ -72,12 +67,10 @@ mod tests {
 
     #[test]
     fn test_no_compaction_needed() {
-        let mut trace = vec![
-            ChatMessage::User {
-                content: ChatMessageContent::Text("hello".to_string()),
-                name: None,
-            },
-        ];
+        let mut trace = vec![ChatMessage::User {
+            content: ChatMessageContent::Text("hello".to_string()),
+            name: None,
+        }];
         let result = compact_trace_if_needed(&mut trace, 10000);
         assert!(!result);
     }
@@ -93,7 +86,7 @@ mod tests {
         }
         let result = compact_trace_if_needed(&mut trace, 5000);
         assert!(result);
-        
+
         let compacted_count = trace.iter().filter(|m| {
             matches!(m, ChatMessage::Tool { content, .. } if matches!(content, ChatMessageContent::Text(t) if t == "[compacted]"))
         }).count();
@@ -110,7 +103,7 @@ mod tests {
             });
         }
         let _ = compact_trace_if_needed(&mut trace, 5000);
-        
+
         // Last 10 messages should still be the original content
         for i in (trace.len() - 10)..trace.len() {
             if let ChatMessage::Tool { content, .. } = &trace[i] {

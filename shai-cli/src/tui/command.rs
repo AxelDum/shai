@@ -144,37 +144,29 @@ impl App<'_> {
             "/temp" => {
                 if let Some(ref agent) = self.agent {
                     match args.into_iter().next() {
-                        Some(temp_str) => {
-                            match temp_str.parse::<f32>() {
+                        Some(temp_str) => match temp_str.parse::<f32>() {
+                            Ok(temp) => match agent.controller.set_temperature(temp).await {
                                 Ok(temp) => {
-                                    match agent.controller.set_temperature(temp).await {
-                                        Ok(temp) => {
-                                            self.input.alert_msg(
-                                                &format!("Temperature set to {:.1}", temp),
-                                                Duration::from_secs(2),
-                                            );
-                                        }
-                                        Err(e) => {
-                                            self.input.alert_msg(
-                                                &format!("Failed to set temperature: {}", e),
-                                                Duration::from_secs(3),
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(_) => {
                                     self.input.alert_msg(
-                                        "Usage: /temp <float>",
+                                        &format!("Temperature set to {:.1}", temp),
+                                        Duration::from_secs(2),
+                                    );
+                                }
+                                Err(e) => {
+                                    self.input.alert_msg(
+                                        &format!("Failed to set temperature: {}", e),
                                         Duration::from_secs(3),
                                     );
                                 }
+                            },
+                            Err(_) => {
+                                self.input
+                                    .alert_msg("Usage: /temp <float>", Duration::from_secs(3));
                             }
-                        }
+                        },
                         None => {
-                            self.input.alert_msg(
-                                "Usage: /temp <float>",
-                                Duration::from_secs(3),
-                            );
+                            self.input
+                                .alert_msg("Usage: /temp <float>", Duration::from_secs(3));
                         }
                     }
                 }

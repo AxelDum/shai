@@ -54,6 +54,14 @@ pub struct AgentResult {
     pub trace: Vec<ChatMessage>,
 }
 
+/// Metadata stored for each tool call, used during trace compaction
+/// to provide context about what was compacted.
+#[derive(Debug, Clone)]
+pub struct ToolCallInfo {
+    pub tool_name: String,
+    pub primary_param: Option<String>,
+}
+
 /// Core agent implementation that orchestrates any Thinker implementation
 pub struct AgentCore {
     pub session_id: String,
@@ -85,6 +93,8 @@ pub struct AgentCore {
     /// Cache of recently read files for duplicate detection
     /// Each entry is (cache_key, formatted_output)
     pub read_cache: Arc<RwLock<Vec<(String, String)>>>,
+    /// Maps tool_call_id → tool call metadata for smart compaction messages
+    pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, ToolCallInfo>>>,
     pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
 
     /// internal event
@@ -138,6 +148,7 @@ impl AgentCore {
             tool_call_count: Arc::new(RwLock::new(0)),
             command_cache: Arc::new(RwLock::new(Vec::new())),
             read_cache: Arc::new(RwLock::new(Vec::new())),
+            tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
             todo_storage,
             internal_tx,
             internal_rx,

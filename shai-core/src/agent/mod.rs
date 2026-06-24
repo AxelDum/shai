@@ -13,6 +13,7 @@ pub mod states;
 mod tests;
 
 pub use agent::{Agent, AgentCore, AgentResult, TaskAgentResponse};
+pub use agent::ToolCallInfo;
 pub use states::{InternalAgentState, PublicAgentState};
 
 pub use protocol::{AgentController, AgentRequest, AgentResponse};

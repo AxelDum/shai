@@ -62,7 +62,11 @@ When using `-p` with cargo commands, always use the package name (e.g., `cargo b
 - Tools are defined as structs implementing the `Tool` trait (`shai-core/src/tools/types.rs`).
 - Skills are discovered from `.shai/skills/` (project-local) and `~/.config/shai/skills/` (global). Each skill is a directory with a `SKILL.md` file.
 - Project context is loaded from `AGENTS.md` (canonical) and `SHAI.md` (legacy override) at the git root.
-- Memory facts are stored in `.shai/memory.md`.
+- Memory facts are stored in both global (`~/.config/shai/memory.md`) and project-local (`.shai/memory.md`) files. Both are merged at read time.
+- **Plan mode** denies all tool execution (read-only). It is enforced both by a dedicated system prompt (`PLAN_MODE_PROMPT` in `shai-core/src/runners/coder/prompt.rs`) that instructs the LLM to only plan, and by `ClaimManager` which blocks all write tools when `is_plan_mode` is set. Managed via `AgentRequest::PlanMode` / `AgentResponse::PlanModeStatus`.
+- Configs can be imported from external tools (Claude `CLAUDE.md`, Cursor `.cursorrules`/`.cursor/rules`) into `AGENTS.md` via the `import` module (`shai-cli/src/import.rs`).
+- The TUI includes a **session picker** (`shai-cli/src/tui/session_picker.rs`) for browsing and restoring saved sessions.
+- The TUI **status bar** (`shai-cli/src/tui/statusbar.rs`) displays model, provider, working directory location, git branch, agent mode, and token counts. It is updated via `StatusBar` setters (`set_location`, `set_git_branch`, `set_agent_mode`, `set_tokens`).
 
 ## Testing
 

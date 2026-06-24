@@ -65,7 +65,8 @@ impl Brain for CoderBrain {
 
         // Apply session-level trace compaction if needed
         if context.max_trace_chars > 0 {
-            compact_trace_if_needed(&mut trace, context.max_trace_chars);
+            let metadata = context.tool_call_metadata.read().await.clone();
+            compact_trace_if_needed(&mut trace, context.max_trace_chars, &metadata);
         }
 
         // Render the user's system prompt template (cached after first call)

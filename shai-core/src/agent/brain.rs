@@ -15,6 +15,7 @@ pub struct ThinkerContext {
     pub max_trace_chars: usize,
     pub temperature:      f32,
     pub is_plan_mode:    bool,
+    pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
 }
 
 /// ThinkerFlowControl drives the agentic flow

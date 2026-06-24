@@ -26,6 +26,7 @@ impl AgentCore {
             max_trace_chars,
             temperature,
             is_plan_mode,
+            tool_call_metadata: self.tool_call_metadata.clone(),
         };
         let brain = self.brain.clone();
 

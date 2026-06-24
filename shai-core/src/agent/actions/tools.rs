@@ -34,6 +34,7 @@ impl AgentCore {
         let read_cache = self.read_cache.clone();
         let max_cached_commands = self.compaction_config.max_cached_commands;
         let max_cached_reads = self.compaction_config.max_cached_reads;
+        let tool_call_metadata = self.tool_call_metadata.clone();
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
@@ -55,6 +56,7 @@ impl AgentCore {
                 self.todo_storage.clone(),
                 read_cache.clone(),
                 max_cached_reads,
+                tool_call_metadata.clone(),
             );
             join_handles.push(handle);
         }
@@ -107,6 +109,7 @@ impl AgentCore {
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
         read_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_reads: usize,
+        tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();
@@ -184,15 +187,14 @@ impl AgentCore {
                                     .map(|f| {
                                         let path =
                                             f.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                        let offset = f
-                                            .get("offset")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let limit = f
-                                            .get("limit")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let outline = f.get("outline").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        let offset =
+                                            f.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let limit =
+                                            f.get("limit").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let outline = f
+                                            .get("outline")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(false);
                                         format!("{}:{}:{}:{}", path, offset, limit, outline)
                                     })
                                     .collect::<Vec<_>>()
@@ -215,15 +217,9 @@ impl AgentCore {
 
                     // Execute or use cached result
                     let result: ToolResult = if let Some(cached) = cached_output {
-                        ToolResult::success(format!(
-                            "[cached] You just ran this command. The result is the same.\n\n{}",
-                            cached
-                        ))
+                        ToolResult::success(cached)
                     } else if let Some(ref cached) = cached_read {
-                        ToolResult::success(format!(
-                            "[cached] This file was read recently and hasn't changed.\n\n{}",
-                            cached
-                        ))
+                        ToolResult::success(cached.clone())
                     } else {
                         // execute tool
                         let tool_handle = Self::spawn_tool_exec(
@@ -338,6 +334,16 @@ impl AgentCore {
                         &raw_output,
                         &compaction_config,
                     );
+                    {
+                        let mut metadata = tool_call_metadata.write().await;
+                        metadata.insert(
+                            call.tool_call_id.clone(),
+                            crate::agent::agent::ToolCallInfo {
+                                tool_name: call.tool_name.clone(),
+                                primary_param: crate::agent::output::pretty::PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name).map(|(_, path)| path),
+                            },
+                        );
+                    }
                     let _ = {
                         trace.write().await.push(ChatMessage::Tool {
                             tool_call_id: call.tool_call_id.clone(),

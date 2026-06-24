@@ -39,10 +39,10 @@ End of file"#;
     let params = ReadToolParams {
         files: vec![ReadFileSpec {
             path: test_file_path.to_string_lossy().to_string(),
-            line_start: None,
-            line_end: None,
-            show_line_numbers: false,
+            offset: None,
+            limit: None,
             outline: false,
+
         }],
     };
 
@@ -84,9 +84,8 @@ async fn test_read_tool_line_range_reading() {
     let params_range = ReadToolParams {
         files: vec![ReadFileSpec {
             path: test_file_path.to_string_lossy().to_string(),
-            line_start: Some(5),
-            line_end: Some(10),
-            show_line_numbers: true,
+            offset: Some(5),
+            limit: Some(6),
             outline: false,
         }],
     };
@@ -112,9 +111,10 @@ async fn test_read_tool_line_range_reading() {
             );
 
             let line_count = output.lines().count();
+            // 1 header + 6 content lines + 1 blank + 1 footer = 9
             assert_eq!(
-                line_count, 7,
-                "Should have exactly 7 lines (header + 5-10 inclusive)"
+                line_count, 9,
+                "Should have exactly 9 lines (header + 6 content lines + footer)"
             );
         }
         crate::tools::ToolResult::Error { error, .. } => {
@@ -134,9 +134,8 @@ async fn test_read_tool_nonexistent_file() {
     let params = ReadToolParams {
         files: vec![ReadFileSpec {
             path: "/nonexistent/path/file.txt".to_string(),
-            line_start: None,
-            line_end: None,
-            show_line_numbers: false,
+            offset: None,
+            limit: None,
             outline: false,
         }],
     };
@@ -184,16 +183,14 @@ async fn test_read_tool_multi_file() {
         files: vec![
             ReadFileSpec {
                 path: file_a.to_string_lossy().to_string(),
-                line_start: None,
-                line_end: None,
-                show_line_numbers: true,
+                offset: None,
+                limit: None,
                 outline: false,
             },
             ReadFileSpec {
                 path: file_b.to_string_lossy().to_string(),
-                line_start: None,
-                line_end: None,
-                show_line_numbers: true,
+                offset: None,
+                limit: None,
                 outline: false,
             },
         ],
@@ -229,16 +226,14 @@ async fn test_read_tool_mixed_existence() {
         files: vec![
             ReadFileSpec {
                 path: file_a.to_string_lossy().to_string(),
-                line_start: None,
-                line_end: None,
-                show_line_numbers: false,
+                offset: None,
+                limit: None,
                 outline: false,
             },
             ReadFileSpec {
                 path: "/nonexistent/file.txt".to_string(),
-                line_start: None,
-                line_end: None,
-                show_line_numbers: false,
+                offset: None,
+                limit: None,
                 outline: false,
             },
         ],

@@ -4,6 +4,7 @@ use std::process::Command;
 
 /// JSON output from measurement_harness
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct Report {
     name: String,
     category: String,
@@ -16,6 +17,7 @@ struct Report {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct ReportSummary {
     total_input: u32,
     total_output: u32,
@@ -24,6 +26,7 @@ struct ReportSummary {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct VerifyResult {
     command: String,
     passed: bool,

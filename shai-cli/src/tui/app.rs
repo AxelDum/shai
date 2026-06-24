@@ -8,7 +8,10 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 use chrono::Utc;
 use cli_clipboard::ClipboardProvider;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{self, disable_raw_mode};
 use futures::{future::FutureExt, StreamExt};
@@ -101,21 +104,10 @@ impl App<'_> {
     pub async fn start_agent(
         &mut self,
         agent_name: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // When the terminal is already initialized (e.g. during /restore), skip the
-        // println! banner since writing directly to stdout corrupts the inline viewport.
-        let suppress_banner = self.terminal.is_some();
-
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let mut agent: Box<dyn Agent> = if let Some(agent_name) = agent_name {
             // Load custom agent config
             let config = AgentConfig::load(agent_name)?;
-
-            if !suppress_banner {
-                println!(
-                    "\x1b[2m░ agent {} - {} on {}\x1b[0m",
-                    agent_name, config.llm_provider.model, config.llm_provider.provider
-                );
-            }
 
             // Store agent metadata for status bar
             self.agent_model = config.llm_provider.model.clone();
@@ -129,16 +121,21 @@ impl App<'_> {
             // Use default coder agent
             let (llm, model) = ShaiConfig::get_llm().await?;
 
-            if !suppress_banner {
-                println!("\x1b[2m░ {} on {}\x1b[0m", model, llm.provider().name());
-            }
-
             // Store agent metadata for status bar
             self.agent_model = model.clone();
             self.agent_provider = llm.provider().name().to_string();
             self.agent_name = None;
 
             Box::new(coder(Arc::new(llm), model))
+        };
+
+        let banner = if let Some(name) = agent_name {
+            format!(
+                "\x1b[2m░ agent {} - {} on {}\x1b[0m",
+                name, self.agent_model, self.agent_provider
+            )
+        } else {
+            format!("\x1b[2m░ {} on {}\x1b[0m", self.agent_model, self.agent_provider)
         };
 
         // Get Agent I/O
@@ -149,7 +146,7 @@ impl App<'_> {
         let handle = tokio::spawn(async move {
             match agent.run().await {
                 Ok(result) => debug!(target: "agent::loop", "Agent completed: {:?}", result),
-                Err(error) => warn!(target: "agent::loop", "Agent failed: {:?}", error),
+                Err(error) => warn!(target: "agent::loop", "Agent failed: {}", error),
             }
         });
 
@@ -178,7 +175,7 @@ impl App<'_> {
             }
         }
 
-        Ok(())
+        Ok(banner)
     }
 
     async fn receive_agent_event(&mut self) -> Option<AgentEvent> {
@@ -389,7 +386,8 @@ impl App<'_> {
         // Restore keyboard protocol
         let _ = execute!(
             std::io::stdout(),
-            crossterm::event::PopKeyboardEnhancementFlags
+            crossterm::event::PopKeyboardEnhancementFlags,
+            DisableMouseCapture,
         );
         std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
@@ -412,22 +410,33 @@ impl App<'_> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Start the agent (custom or default)
         let agent_name_ref = agent_name.as_deref();
-        self.start_agent(agent_name_ref)
-            .await
-            .map_err(|e| -> Box<dyn std::error::Error> {
-                if let Some(name) = agent_name_ref {
-                    format!("could not start custom agent '{}': {}", name, e).into()
-                } else {
-                    "could not start shai agent, run shai auth first"
-                        .to_string()
-                        .into()
-                }
-            })?;
+        let banner = self.start_agent(agent_name_ref).await.map_err(|e| -> Box<dyn std::error::Error> {
+            if let Some(name) = agent_name_ref {
+                format!("could not start custom agent '{}': {}", name, e).into()
+            } else {
+                "could not start shai agent, run shai auth first"
+                    .to_string()
+                    .into()
+            }
+        })?;
 
         // create terminal
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
             viewport: Viewport::Fullscreen,
         }));
+
+        // Enable mouse capture so we receive scroll events
+        execute!(io::stdout(), EnableMouseCapture).ok();
+
+        // Clear the alternate screen so previous shell output doesn't show through
+        if let Some(ref mut terminal) = self.terminal {
+            terminal.clear()?;
+        }
+
+        // Render the startup banner into the TUI history
+        if !banner.is_empty() {
+            self.history.add_text(&banner);
+        }
 
         std::io::stdout().flush().ok();
 
@@ -484,7 +493,20 @@ impl App<'_> {
                     terminal.clear()?;
                 }
             }
+            Event::Mouse(mouse_event) => {
+                match mouse_event.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.history.scroll_up(3);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.history.scroll_down(3);
+                    }
+                    _ => {}
+                }
+            }
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                // Any key resets scroll to bottom
+                self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
             }
             _ => {}

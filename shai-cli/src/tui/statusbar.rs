@@ -8,6 +8,42 @@ use ratatui::{
 
 use super::theme::Theme;
 
+/// Format a token count into human-readable form (K, M, G)
+fn format_tokens(n: u32) -> String {
+    if n < 1000 {
+        n.to_string()
+    } else if n < 1_000_000 {
+        format!("{:.1}K", n as f64 / 1000.0)
+    } else if n < 1_000_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else {
+        format!("{:.1}G", n as f64 / 1_000_000_000.0)
+    }
+}
+
+/// Maximum display width for the location path in the status bar
+const MAX_LOCATION_WIDTH: usize = 30;
+
+/// Shorten a filesystem path for display in the status bar.
+/// Replaces the $HOME prefix with `~` and truncates the beginning if too long.
+fn shorten_path(path: &str) -> String {
+    // Replace home prefix with ~
+    let home = std::env::var("HOME").unwrap_or_default();
+    let display = if !home.is_empty() && path.starts_with(&home) {
+        format!("~{}", &path[home.len()..])
+    } else {
+        path.to_string()
+    };
+
+    // Truncate from the left if still too long
+    if display.len() <= MAX_LOCATION_WIDTH {
+        return display;
+    }
+
+    let truncated = &display[display.len() - MAX_LOCATION_WIDTH + 3..];
+    format!("...{}", truncated)
+}
+
 /// Information displayed in the persistent status bar
 #[derive(Clone)]
 pub struct StatusBarInfo {
@@ -71,8 +107,6 @@ impl StatusBar {
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {
-        let palette = self.theme.palette();
-
         let mut spans = vec![
             Span::styled(
                 format!(" {} ", self.info.provider),
@@ -81,7 +115,7 @@ impl StatusBar {
             Span::raw(" "),
             Span::styled(
                 self.info.model.clone(),
-                Style::default().fg(palette.input_text),
+                Style::default().fg(Color::White).bg(Color::DarkGray),
             ),
         ];
 
@@ -89,7 +123,7 @@ impl StatusBar {
         if !self.info.location.is_empty() {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
-                format!(" {} ", self.info.location),
+                format!(" {} ", shorten_path(&self.info.location)),
                 Style::default().fg(Color::Black).bg(Color::Yellow),
             ));
         }
@@ -113,11 +147,12 @@ impl StatusBar {
         }
 
         // Right-aligned: tokens
+        let total = self.info.input_tokens + self.info.output_tokens;
         let token_str = format!(
             " {} ↑{} ↓{} ",
-            self.info.input_tokens + self.info.output_tokens,
-            self.info.input_tokens,
-            self.info.output_tokens,
+            format_tokens(total),
+            format_tokens(self.info.input_tokens),
+            format_tokens(self.info.output_tokens),
         );
 
         let left_len: usize = spans.iter().map(|s| s.content.chars().count()).sum();
@@ -126,7 +161,10 @@ impl StatusBar {
         let spaces = padding.saturating_sub(left_len + right_len);
         let spacer = " ".repeat(spaces);
 
-        spans.push(Span::raw(spacer));
+        spans.push(Span::styled(
+            spacer,
+            Style::default().bg(Color::DarkGray),
+        ));
         spans.push(Span::styled(
             token_str,
             Style::default().fg(Color::White).bg(Color::DarkGray),

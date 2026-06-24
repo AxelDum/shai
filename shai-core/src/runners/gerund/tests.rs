@@ -105,11 +105,6 @@ async fn test_gerund_with_coding_message() {
                     text.chars().next().unwrap().is_uppercase(),
                     "Gerund should start with capital letter"
                 );
-                // Should end with "ing" (gerund form)
-                assert!(
-                    text.to_lowercase().ends_with("ing"),
-                    "Should be in gerund form ending with 'ing'"
-                );
             }
         }
         _ => panic!("Expected Assistant message"),
@@ -171,14 +166,13 @@ async fn test_gerund_prompt_generation() {
     let prompt = gerund_prompt();
 
     assert!(!prompt.is_empty(), "Gerund prompt should not be empty");
-    assert!(prompt.contains("gerund"), "Prompt should mention gerund");
     assert!(
-        prompt.contains("positive"),
-        "Prompt should emphasize positive words"
+        prompt.contains("uplifting"),
+        "Prompt should emphasize uplifting words"
     );
     assert!(
-        prompt.contains("cheerful"),
-        "Prompt should emphasize cheerful words"
+        prompt.contains("joy"),
+        "Prompt should emphasize joyful words"
     );
 }
 

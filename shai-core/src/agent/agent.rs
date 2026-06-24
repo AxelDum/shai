@@ -83,6 +83,7 @@ pub struct AgentCore {
     /// Cache of recently executed bash commands for duplicate detection
     /// Each entry is (normalized_command, compacted_output)
     pub command_cache: Arc<RwLock<Vec<(String, String)>>>,
+    pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
 
     /// internal event
     pub internal_tx: broadcast::Sender<InternalAgentEvent>,   // event may be produced from many part of the agent
@@ -107,6 +108,7 @@ impl AgentCore {
         verification_config: VerificationConfig,
         fs_operation_log: Arc<FsOperationLog>,
         working_dir: Option<String>,
+        todo_storage: Arc<crate::tools::todo::TodoStorage>,
     ) -> Self {
         let (internal_tx, internal_rx) = broadcast::channel(1024);
         Self {
@@ -130,6 +132,7 @@ impl AgentCore {
             working_dir,
             tool_call_count: Arc::new(RwLock::new(0)),
             command_cache: Arc::new(RwLock::new(Vec::new())),
+            todo_storage,
             internal_tx,
             internal_rx,
         }
@@ -406,6 +409,16 @@ impl AgentCore {
                 let enabled = guard.is_sudo();
                 Ok(AgentResponse::SudoStatus { enabled })
             }
+            AgentRequest::PlanMode(operation) => {
+                let mut guard = self.permissions.write().await;
+                match operation {
+                    Some(true) => guard.plan_mode(),
+                    Some(false) => guard.no_plan_mode(),
+                    None => {} // Just get status
+                }
+                let enabled = guard.is_plan_mode();
+                Ok(AgentResponse::PlanModeStatus { enabled })
+            }
             AgentRequest::Terminate=> {
                 self.handle_event(InternalAgentEvent::CancelTask).await
                 .and({
@@ -420,9 +433,30 @@ impl AgentCore {
                     Ok(AgentResponse::Ack)
                 })
             }
+            AgentRequest::Regenerate => {
+                self.handle_event(InternalAgentEvent::CancelTask)
+                    .await
+                    .and({
+                        // Remove trailing assistant messages and tool calls to re-think
+                        // from the last user message
+                        {
+                            let mut trace = self.trace.write().await;
+                            while let Some(msg) = trace.last() {
+                                match msg {
+                                    ChatMessage::User { .. } => break,
+                                    _ => {
+                                        trace.pop();
+                                    }
+                                }
+                            }
+                        }
+                        self.set_state(InternalAgentState::Running).await;
+                        Ok(AgentResponse::Ack)
+                    })
+            }
             AgentRequest::SwitchToolCallMethod { method } => {
                 if let Some(method) = method {
-                    self.method = method;   
+                    self.method = method;
                 }
                 Ok(AgentResponse::Method { method: self.method })
             }

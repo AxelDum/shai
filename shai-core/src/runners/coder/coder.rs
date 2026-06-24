@@ -12,7 +12,7 @@ use shai_llm::tool::LlmToolCall;
 use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, MultiEditTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
 use crate::tools::skills::SkillTool;
 
-use super::prompt::{render_system_prompt_template, get_todo_read};
+use super::prompt::{render_system_prompt_template, get_todo_read, PLAN_MODE_PROMPT};
 use crate::runners::compacter::compact_trace_if_needed;
 
 #[derive(Clone)]
@@ -70,10 +70,16 @@ impl Brain for CoderBrain {
         };
         
         // Add todo status if available
-        let mut system_prompt_full = system_prompt;
+        let mut system_prompt_full = system_prompt.clone();
         if let Some(tool) = context.available_tools.get_tool("todo_read") {
             let todo_status = get_todo_read(&tool).await;
             system_prompt_full += &todo_status;
+        }
+
+        // Add plan mode instructions
+        if context.is_plan_mode {
+            system_prompt_full += "\n\n";
+            system_prompt_full += PLAN_MODE_PROMPT;
         }
 
         trace.insert(0, ChatMessage::System {

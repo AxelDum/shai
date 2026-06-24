@@ -15,6 +15,9 @@ pub trait FunctionCallingAutoBuilder {
 
 impl FunctionCallingAutoBuilder for ChatCompletionParametersBuilder {
     fn with_function_calling_auto(&mut self, tools: &ToolBox) -> &mut Self {
+        if tools.is_empty() {
+            return self; // No tools to register — don't set tool_choice either
+        }
         self.tools(
             tools
                 .iter()

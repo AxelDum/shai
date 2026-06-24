@@ -1,6 +1,8 @@
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
+use ringbuffer::AllocRingBuffer;
+
 use crate::fc::history::{CommandEntry, CommandHistory, HistoryStats};
 use crate::fc::protocol::{ResponseData, ShaiProtocol, ShaiRequest, ShaiResponse};
 
@@ -30,7 +32,13 @@ impl ShaiSessionClient {
         match response {
             ShaiResponse::Ok {
                 data: ResponseData::Commands(entries),
-            } => Ok(entries.into()),
+            } => {
+                if entries.is_empty() {
+                    Ok(AllocRingBuffer::new(1))
+                } else {
+                    Ok(entries.into())
+                }
+            }
             ShaiResponse::Ok { .. } => Err("Unexpected response type".into()),
             ShaiResponse::Error { message } => Err(message.into()),
         }
@@ -48,7 +56,13 @@ impl ShaiSessionClient {
         match response {
             ShaiResponse::Ok {
                 data: ResponseData::Commands(entries),
-            } => Ok(entries.into()),
+            } => {
+                if entries.is_empty() {
+                    Ok(AllocRingBuffer::new(1))
+                } else {
+                    Ok(entries.into())
+                }
+            }
             ShaiResponse::Ok { .. } => Err("Unexpected response type".into()),
             ShaiResponse::Error { message } => Err(message.into()),
         }

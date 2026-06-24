@@ -25,9 +25,9 @@ pub enum InternalAgentEvent {
         result: Result<ThinkerDecision, AgentError>
     },
     /// Agent started executing a tool
-    ToolCallStarted { 
+    ToolCallStarted {
         timestamp: DateTime<Utc>,
-        call: ToolCall 
+        call: ToolCall
     },
     /// Tool execution completed and returned a result
     ToolCallCompleted {
@@ -40,12 +40,12 @@ pub enum InternalAgentEvent {
         any_denied: bool,
     },
     /// User response received from controller
-    UserResponseReceived { 
+    UserResponseReceived {
         request_id: String,
         response: UserResponse
     },
     /// Permission response received from controller
-    PermissionResponseReceived { 
+    PermissionResponseReceived {
         request_id: String,
         response: PermissionResponse
     }
@@ -56,21 +56,21 @@ pub enum InternalAgentEvent {
 #[derive(Clone)]
 pub enum AgentEvent {
     /// Agent status has changed
-    StatusChanged { 
-        old_status: PublicAgentState, 
-        new_status: PublicAgentState 
+    StatusChanged {
+        old_status: PublicAgentState,
+        new_status: PublicAgentState
     },
     /// Thinking Start
     ThinkingStart,
     /// Agent is thinking - provides the thought content to display to user
-    BrainResult { 
+    BrainResult {
         timestamp: DateTime<Utc>,
         thought: Result<ChatMessage, AgentError>
     },
     /// Agent started executing a tool
-    ToolCallStarted { 
+    ToolCallStarted {
         timestamp: DateTime<Utc>,
-        call: ToolCall 
+        call: ToolCall
     },
     /// Tool execution completed and returned a result
     ToolCallCompleted {
@@ -81,16 +81,16 @@ pub enum AgentEvent {
         compacted_bytes: usize,
     },
     /// User provided input to the agent
-    UserInput { 
+    UserInput {
         input: String,
     },
     /// Agent requires user input to continue
-    UserInputRequired { 
+    UserInputRequired {
         request_id: String,
         request: UserRequest,
     },
     /// Agent requires permission to perform an action
-    PermissionRequired { 
+    PermissionRequired {
         request_id: String,
         request: PermissionRequest,
     },
@@ -103,6 +103,10 @@ pub enum AgentEvent {
         input_tokens: u32,
         output_tokens: u32,
         cached_tokens: u32
+    },
+    /// Todo list was updated
+    TodoUpdated {
+        todos: Vec<crate::tools::todo::TodoItem>,
     },
 }
 
@@ -278,6 +282,11 @@ impl std::fmt::Debug for AgentEvent {
                     .field("input_tokens", input_tokens)
                     .field("output_tokens", output_tokens)
                     .field("cached_tokens", cached_tokens)
+                    .finish()
+            }
+            AgentEvent::TodoUpdated { todos } => {
+                f.debug_struct("TodoUpdated")
+                    .field("todos", todos)
                     .finish()
             }
         }

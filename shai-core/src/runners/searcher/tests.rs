@@ -1,5 +1,6 @@
 use super::searcher::SearcherBrain;
 use crate::agent::Agent;
+use crate::config::config::ShaiConfig;
 use crate::logging::LoggingConfig;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use shai_llm::client::LlmClient;
@@ -14,10 +15,18 @@ fn init_test_logging() {
     });
 }
 
+use crate::runners::test_helpers::DIR_TEST_MUTEX;
+
+/// Helper to get an LLM client + model from ShaiConfig.
+/// Falls back to environment variables if no config file exists.
+async fn get_llm() -> Result<(Arc<LlmClient>, String), Box<dyn std::error::Error>> {
+    let (client, model) = ShaiConfig::get_llm().await?;
+    Ok((Arc::new(client), model))
+}
+
 // Helper function to create a searcher agent with goal
 async fn create_searcher_agent_with_goal(goal: &str) -> impl Agent {
-    let llm_client = Arc::new(LlmClient::first_from_env().expect("No LLM provider available"));
-    let model = llm_client.default_model().await.expect("default model");
+    let (llm_client, model) = get_llm().await.expect("No LLM provider available");
     println!("using model: {:?}", model);
 
     crate::agent::AgentBuilder::with_brain(Box::new(SearcherBrain::new(llm_client, model)))
@@ -42,6 +51,7 @@ async fn create_searcher_agent_with_goal(goal: &str) -> impl Agent {
 #[tokio::test]
 async fn test_searcher_find_struct_definition() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
 
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
@@ -167,6 +177,7 @@ fn main() {
 #[tokio::test]
 async fn test_searcher_analyze_auth_feature() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
 
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
@@ -359,6 +370,7 @@ impl AuthController {
 #[tokio::test]
 async fn test_searcher_generate_knowledge_documentation() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
 
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");

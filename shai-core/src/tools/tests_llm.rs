@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod llm_integration_tests {
+    use crate::config::config::ShaiConfig;
     use crate::logging::LoggingConfig;
     use crate::tools::{
         AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, MultiEditTool,
@@ -9,7 +10,6 @@ mod llm_integration_tests {
         ChatCompletionParametersBuilder, ChatCompletionToolChoice,
     };
     use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
-    use shai_llm::LlmClient;
     use std::sync::Arc;
     use std::sync::Once;
     use tracing::debug;
@@ -29,8 +29,9 @@ mod llm_integration_tests {
     ) -> Result<bool, Box<dyn std::error::Error>> {
         init_test_logging();
 
-        let llm_client = LlmClient::first_from_env().ok_or("No LLM provider available")?;
-        let model = llm_client.default_model().await.expect("default model");
+        let (llm_client, model) = ShaiConfig::get_llm()
+            .await
+            .map_err(|e| format!("No LLM provider available: {}", e))?;
 
         println!(
             "Testing tool '{}' with model '{}' from provider '{}'",
@@ -130,6 +131,7 @@ mod llm_integration_tests {
                 Err(e) => {
                     let error_str = e.to_string().to_lowercase();
                     if error_str.contains("not available")
+                        || error_str.contains("no llm provider")
                         || error_str.contains("connection")
                         || error_str.contains("refused")
                     {

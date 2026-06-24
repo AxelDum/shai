@@ -45,6 +45,7 @@ use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
 use super::statusbar::StatusBar;
 use super::theme::Theme;
+use super::viewer::AlternateScreenViewer;
 use crate::tui::input::InputArea;
 use crate::tui::perm::PermissionWidget;
 use crate::tui::perm_alt_screen::AlternateScreenPermissionModal;
@@ -92,6 +93,10 @@ pub struct App<'a> {
     // Session persistence
     pub(crate) session_id: String,
     pub(crate) last_assistant_response: String,
+
+    // Last tool result for expandable viewer
+    pub(crate) last_tool_output: Option<String>,
+    pub(crate) last_tool_file_path: Option<String>,
 }
 
 // Agent-related Internals
@@ -286,9 +291,18 @@ impl App<'_> {
             self.tool_start_times
                 .insert(call.tool_call_id.clone(), Instant::now());
         }
-        if let AgentEvent::ToolCallCompleted { call, .. } = &event {
+        if let AgentEvent::ToolCallCompleted { call, result, .. } = &event {
             self.running_tools.remove(&call.tool_call_id);
             self.tool_start_times.remove(&call.tool_call_id);
+
+            // Store tool result for expandable viewer
+            if let ToolResult::Success { output, .. } = result {
+                let file_path =
+                    PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name)
+                        .map(|(_, path)| path);
+                self.last_tool_output = Some(output.clone());
+                self.last_tool_file_path = file_path;
+            }
         }
 
         // Format and display event
@@ -391,6 +405,8 @@ impl App<'_> {
             agent_name: None,
             session_id: uuid::Uuid::new_v4().to_string(),
             last_assistant_response: String::new(),
+            last_tool_output: None,
+            last_tool_file_path: None,
         }
     }
 
@@ -613,6 +629,17 @@ impl App<'_> {
                         let _ = agent.controller.no_plan_mode().await;
                     }
                 }
+
+        // Handle Ctrl+X — Expand last tool result in alternate screen viewer
+        if matches!(key_event.code, KeyCode::Char('x'))
+            && key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            if let Some(output) = self.last_tool_output.clone() {
+                let mut viewer =
+                    AlternateScreenViewer::new(output, self.last_tool_file_path.clone());
+                let _ = viewer.run().await;
             }
             return Ok(());
         }

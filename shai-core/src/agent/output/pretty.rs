@@ -1,4 +1,5 @@
 use crate::agent::{AgentError, AgentEvent};
+use crate::tools::highlight::highlight_content;
 use crate::tools::{ToolCall, ToolResult};
 use chrono::Utc;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
@@ -13,7 +14,7 @@ pub struct PrettyFormatter {
 
 impl PrettyFormatter {
     pub fn new() -> Self {
-        Self::with_max_preview_lines(10)
+        Self::with_max_preview_lines(50)
     }
 
     pub fn with_max_preview_lines(max_preview_lines: usize) -> Self {
@@ -183,11 +184,11 @@ impl PrettyFormatter {
         let mut output = String::new();
         if let Some((_, ctx)) = context {
             output.push_str(&format!(
-                "\x1b[36m●\x1b[0m \x1b[1m{}\x1b[0m({})",
+                "\x1b[36m→\x1b[0m \x1b[1m{}\x1b[0m {}",
                 tool_name, ctx
             ));
         } else {
-            output.push_str(&format!("\x1b[36m●\x1b[0m \x1b[1m{}\x1b[0m", tool_name));
+            output.push_str(&format!("\x1b[36m→\x1b[0m \x1b[1m{}\x1b[0m", tool_name));
         }
         output
     }
@@ -199,13 +200,13 @@ impl PrettyFormatter {
 
         let mut output = String::new();
         let bullet = if (Utc::now().timestamp_millis() / 500) % 2 == 0 {
-            "● "
+            "→"
         } else {
-            "○ "
+            "➔"
         };
         if let Some((_, ctx)) = context {
             output.push_str(&format!(
-                "\x1b[36m{}\x1b[0m \x1b[1m{}\x1b[0m({})",
+                "\x1b[36m{}\x1b[0m \x1b[1m{}\x1b[0m {}",
                 bullet, tool_name, ctx
             ));
         } else {
@@ -227,14 +228,65 @@ impl PrettyFormatter {
         } else {
             "\x1b[31m"
         };
+
+        // For read tool, show compact format with offset/limit instead of full content
+        if call.tool_name == "read" {
+            let mut parts = Vec::new();
+            if let Some(files) = call.parameters.get("files").and_then(|f| f.as_array()) {
+                if let Some(first_file) = files.first().and_then(|f| f.as_object()) {
+                    if let Some(offset) = first_file.get("offset").and_then(|v| v.as_u64()) {
+                        if offset > 1 {
+                            parts.push(format!("offset={}", offset));
+                        }
+                    }
+                    if let Some(limit) = first_file.get("limit").and_then(|v| v.as_u64()) {
+                        parts.push(format!("limit={}", limit));
+                    }
+                }
+            }
+            let params_str = if parts.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", parts.join(", "))
+            };
+
+            let mut output = String::new();
+            if let Some((_, ctx)) = &context {
+                output.push_str(&format!(
+                    "{}←\x1b[0m \x1b[1m{}\x1b[0m {}{}\n",
+                    color, tool_name, ctx, params_str
+                ));
+            } else {
+                output.push_str(&format!(
+                    "{}←\x1b[0m \x1b[1m{}\x1b[0m{}\n",
+                    color, tool_name, params_str
+                ));
+            }
+
+            // Show error/denied message if applicable
+            match result {
+                ToolResult::Error { error, .. } => {
+                    output.push_str(&format!("  \x1b[2;31mError: {}\x1b[0m", error));
+                }
+                ToolResult::Denied => {
+                    output.push_str(
+                        "  \x1b[2;31mDenied: The tool call was rejected by the user\x1b[0m",
+                    );
+                }
+                _ => {}
+            }
+
+            return output;
+        }
+
         let mut output = String::new();
         if let Some((_, ctx)) = context {
             output.push_str(&format!(
-                "{}●\x1b[0m \x1b[1m{}\x1b[0m({})\n",
+                "{}←\x1b[0m \x1b[1m{}\x1b[0m {}\n",
                 color, tool_name, ctx
             ));
         } else {
-            output.push_str(&format!("{}●\x1b[0m \x1b[1m{}\x1b[0m\n", color, tool_name));
+            output.push_str(&format!("{}←\x1b[0m \x1b[1m{}\x1b[0m\n", color, tool_name));
         }
 
         match result {
@@ -244,17 +296,17 @@ impl PrettyFormatter {
             } => {
                 if tool_output.trim().is_empty() {
                     // Use ANSI codes: bold "Completed"
-                    output.push_str("  ⎿ \x1b[1mCompleted\x1b[0m");
+                    output.push_str("  ← \x1b[1mCompleted\x1b[0m");
                 } else {
                     let lines = tool_output.lines().count();
                     let chars = tool_output.len();
 
                     // Use ANSI codes: bold numbers, normal text
                     if lines == 1 {
-                        output.push_str(&format!("  ⎿ \x1b[1m{}\x1b[0m chars", chars));
+                        output.push_str(&format!("  ← \x1b[1m{}\x1b[0m chars", chars));
                     } else {
                         output.push_str(&format!(
-                            "  ⎿ \x1b[1m{}\x1b[0m lines, \x1b[1m{}\x1b[0m chars",
+                            "  ← \x1b[1m{}\x1b[0m lines, \x1b[1m{}\x1b[0m chars",
                             lines, chars
                         ));
                     }
@@ -262,16 +314,34 @@ impl PrettyFormatter {
                     // Show first N lines for user display only for specific tools
                     if matches!(
                         call.tool_name.as_str(),
-                        "ls" | "bash" | "edit" | "multiedit" | "find" | "todo_read" | "todo_write"
+                        "ls" | "bash"
+                            | "edit"
+                            | "multiedit"
+                            | "find"
+                            | "write"
+                            | "todo_read"
+                            | "todo_write"
                     ) {
                         let preview_lines: Vec<&str> =
                             tool_output.lines().take(self.max_preview_lines).collect();
                         if !preview_lines.is_empty() {
+                            // Determine if we should syntax-highlight this output
+                            let should_highlight =
+                                matches!(call.tool_name.as_str(), "write");
+                            let file_path = if should_highlight {
+                                Self::extract_primary_param(&call.parameters, &call.tool_name)
+                                    .map(|(_, path)| path)
+                            } else {
+                                None
+                            };
+
                             let mut markdown_content = String::new();
                             markdown_content.push('\n');
-                            for line in preview_lines {
-                                // Diff visualization: color added lines green, removed lines red
-                                if line.starts_with("+") && !line.starts_with("++") {
+                            for line in &preview_lines {
+                                if should_highlight {
+                                    // Syntax-highlighted output — no diff coloring
+                                    markdown_content.push_str(&format!("      {}\n", line));
+                                } else if line.starts_with("+") && !line.starts_with("++") {
                                     markdown_content
                                         .push_str(&format!("      \x1b[32m{}\x1b[0m\n", line));
                                 } else if line.starts_with("-") && !line.starts_with("--") {
@@ -288,20 +358,41 @@ impl PrettyFormatter {
                                 ));
                             }
 
+                            // Apply syntax highlighting if we have a file path
+                            let final_content = if let Some(path) = file_path {
+                                // Reconstruct the preview content without leading newlines/spaces
+                                let raw_preview: String = preview_lines.join("\n");
+                                let highlighted = highlight_content(&raw_preview, &path);
+                                let mut result = String::new();
+                                result.push('\n');
+                                for line in highlighted.lines() {
+                                    result.push_str(&format!("      {}\n", line));
+                                }
+                                if lines > self.max_preview_lines {
+                                    result.push_str(&format!(
+                                        "      ... {} more lines\n",
+                                        lines - self.max_preview_lines
+                                    ));
+                                }
+                                result
+                            } else {
+                                markdown_content
+                            };
+
                             // Render markdown content and append to output
-                            output.push_str(&self.skin.term_text(&markdown_content).to_string());
+                            output.push_str(&self.skin.term_text(&final_content).to_string());
                         }
                     }
                 }
             }
             ToolResult::Error { error, .. } => {
                 // Use ANSI codes: entire line dim red
-                output.push_str(&format!("  ⎿ \x1b[2;31mError: {}\x1b[0m", error));
+                output.push_str(&format!("  ← \x1b[2;31mError: {}\x1b[0m", error));
             }
             ToolResult::Denied => {
                 // Use ANSI codes: entire line dim red
                 output.push_str(
-                    "  ⎿ \x1b[2;31mDenied: The tool call was rejected by the user\x1b[0m",
+                    "  ← \x1b[2;31mDenied: The tool call was rejected by the user\x1b[0m",
                 );
             }
         }

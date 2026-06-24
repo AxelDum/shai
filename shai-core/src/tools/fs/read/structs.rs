@@ -15,3 +15,9 @@ pub struct ReadToolParams {
     #[serde(default)]
     pub show_line_numbers: bool,
 }
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct MultiReadToolParams {
+    /// Array of file paths to read
+    pub paths: Vec<String>,
+}

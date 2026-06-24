@@ -16,5 +16,5 @@ pub use find::FindTool;
 pub use ls::LsTool;
 pub use multiedit::{MultiEditTool, MultiFileEditTool};
 pub use operation_log::{FsOperation, FsOperationLog, FsOperationSummary, FsOperationType};
-pub use read::ReadTool;
+pub use read::{MultiReadTool, ReadTool};
 pub use write::WriteTool;

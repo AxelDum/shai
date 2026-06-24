@@ -225,3 +225,91 @@ async fn test_read_tool_line_range_reading() {
         }
     }
 }
+
+// ===== MultiReadTool tests =====
+
+#[tokio::test]
+async fn test_multiread_basic() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let file_a = temp_dir.path().join("a.txt");
+    let file_b = temp_dir.path().join("b.rs");
+    fs::write(&file_a, "Hello World\nLine 2").unwrap();
+    fs::write(&file_b, "fn main() {}\n").unwrap();
+
+    let log = Arc::new(FsOperationLog::new());
+    let tool = super::read::MultiReadTool::new(log);
+    let params = super::structs::MultiReadToolParams {
+        paths: vec![
+            file_a.to_string_lossy().to_string(),
+            file_b.to_string_lossy().to_string(),
+        ],
+    };
+
+    let result = tool.execute(params, None).await;
+    match result {
+        crate::tools::ToolResult::Success { output, .. } => {
+            assert!(output.contains("Hello World"));
+            assert!(output.contains("fn main()"));
+            assert!(output.contains("a.txt"));
+            assert!(output.contains("b.rs"));
+        }
+        crate::tools::ToolResult::Error { error, .. } => {
+            panic!("MultiRead should succeed, got error: {}", error);
+        }
+        crate::tools::ToolResult::Denied => {
+            panic!("MultiRead was denied");
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_multiread_empty_params() {
+    let log = Arc::new(FsOperationLog::new());
+    let tool = super::read::MultiReadTool::new(log);
+    let params = super::structs::MultiReadToolParams {
+        paths: vec![],
+    };
+
+    let result = tool.execute(params, None).await;
+    assert!(result.is_error());
+}
+
+#[tokio::test]
+async fn test_multiread_mixed_existence() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let file_a = temp_dir.path().join("exists.txt");
+    fs::write(&file_a, "content").unwrap();
+
+    let log = Arc::new(FsOperationLog::new());
+    let tool = super::read::MultiReadTool::new(log);
+    let params = super::structs::MultiReadToolParams {
+        paths: vec![
+            file_a.to_string_lossy().to_string(),
+            "/nonexistent/file.txt".to_string(),
+        ],
+    };
+
+    let result = tool.execute(params, None).await;
+    match result {
+        crate::tools::ToolResult::Success { output, .. } => {
+            assert!(output.contains("content"));
+            assert!(output.contains("does not exist"));
+        }
+        _ => panic!("MultiRead should succeed even with missing files"),
+    }
+}
+
+#[test]
+fn test_find_exclude_patterns_config() {
+    let config = crate::config::agent::CompactionConfig::default();
+    assert!(!config.find_exclude_patterns.is_empty());
+    assert!(config.find_exclude_patterns.contains(&".git".to_string()));
+    assert!(config.find_exclude_patterns.contains(&"target".to_string()));
+    assert!(config.find_exclude_patterns.contains(&"node_modules".to_string()));
+}
+
+#[test]
+fn test_max_cached_reads_config() {
+    let config = crate::config::agent::CompactionConfig::default();
+    assert_eq!(config.max_cached_reads, 100);
+}

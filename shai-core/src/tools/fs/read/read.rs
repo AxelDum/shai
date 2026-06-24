@@ -1,5 +1,5 @@
 use super::super::{FsOperationLog, FsOperationType};
-use super::structs::ReadToolParams;
+use super::structs::{MultiReadToolParams, ReadToolParams};
 use crate::tools::fs::hash::compute_line_hash;
 use crate::tools::{tool, ToolResult};
 use serde_json::json;
@@ -181,6 +181,93 @@ impl ReadTool {
                 }
             }
             Err(e) => ToolResult::error(format!("Failed to read file: {}", e)),
+        }
+    }
+}
+
+/// Reads a file and returns its content with line numbers and hashes.
+/// Shared between ReadTool and MultiReadTool.
+fn read_file_with_line_numbers(path: &str) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let reader = BufReader::new(file);
+    let lines: Result<Vec<(u32, String)>, io::Error> = reader
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let line_num = i as u32 + 1;
+            line.map(|l| (line_num, l))
+        })
+        .collect();
+    let lines = lines.map_err(|e| e.to_string())?;
+    let formatted = lines
+        .iter()
+        .map(|(line_num, content)| {
+            let hash = compute_line_hash(content);
+            format!("{:4}: {} {}", line_num, hash, content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(formatted)
+}
+
+#[derive(Clone)]
+pub struct MultiReadTool {
+    operation_log: Arc<FsOperationLog>,
+}
+
+#[tool(name = "multiread", description = r#"Reads multiple files in a single call. Each file's content is prefixed with its path.
+Use this when you need to inspect several files at once — more efficient than multiple read calls.
+
+**Usage:**
+- Pass an array of file `paths` to read.
+- Output includes line numbers and hashes for each file, separated by `=== {path} ===` headers."#, capabilities = [Read])]
+impl MultiReadTool {
+    pub fn new(operation_log: Arc<FsOperationLog>) -> Self {
+        Self { operation_log }
+    }
+
+    async fn execute(&self, params: MultiReadToolParams) -> ToolResult {
+        if params.paths.is_empty() {
+            return ToolResult::error("At least one file path is required".to_string());
+        }
+
+        let mut outputs = Vec::new();
+        let mut total_lines = 0usize;
+        let mut file_count = 0usize;
+
+        for path_str in &params.paths {
+            let path = Path::new(path_str);
+            if !path.exists() {
+                outputs.push(format!("=== {} ===\n[Error: File does not exist]", path_str));
+                continue;
+            }
+            if !path.is_file() {
+                outputs.push(format!("=== {} ===\n[Error: Path is not a file]", path_str));
+                continue;
+            }
+
+            match read_file_with_line_numbers(path_str) {
+                Ok(content) => {
+                    total_lines += content.lines().count();
+                    file_count += 1;
+                    self.operation_log
+                        .log_operation(FsOperationType::Read, path_str.clone())
+                        .await;
+                    outputs.push(format!("=== {} ===\n{}", path_str, content));
+                }
+                Err(e) => {
+                    outputs.push(format!("=== {} ===\n[Error: {}]", path_str, e));
+                }
+            }
+        }
+
+        let mut meta = HashMap::new();
+        meta.insert("file_count".to_string(), json!(file_count));
+        meta.insert("total_lines".to_string(), json!(total_lines));
+
+        ToolResult::Success {
+            output: outputs.join("\n\n"),
+            metadata: Some(meta),
         }
     }
 }

@@ -83,6 +83,9 @@ pub struct AgentCore {
     /// Cache of recently executed bash commands for duplicate detection
     /// Each entry is (normalized_command, compacted_output)
     pub command_cache: Arc<RwLock<Vec<(String, String)>>>,
+    /// Cache of recently read files for duplicate detection
+    /// Each entry is (cache_key, formatted_output)
+    pub read_cache: Arc<RwLock<Vec<(String, String)>>>,
     pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
 
     /// internal event
@@ -132,6 +135,7 @@ impl AgentCore {
             working_dir,
             tool_call_count: Arc::new(RwLock::new(0)),
             command_cache: Arc::new(RwLock::new(Vec::new())),
+            read_cache: Arc::new(RwLock::new(Vec::new())),
             todo_storage,
             internal_tx,
             internal_rx,

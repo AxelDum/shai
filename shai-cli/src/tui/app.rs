@@ -41,7 +41,7 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, warn};
 
 use super::history::ConversationHistory;
-use super::input::UserAction;
+use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
 use super::statusbar::StatusBar;
 use super::theme::Theme;
@@ -161,6 +161,21 @@ impl App<'_> {
         self.status_bar.set_model(&self.agent_model);
         self.status_bar.set_provider(&self.agent_provider);
 
+        // Update status bar with working directory and git branch
+        if let Ok(cwd) = std::env::current_dir() {
+            self.status_bar
+                .set_location(&cwd.to_string_lossy().to_string());
+        }
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+        {
+            if output.status.success() {
+                let branch = String::from_utf8_lossy(&output.stdout);
+                self.status_bar.set_git_branch(branch.trim());
+            }
+        }
+
         Ok(())
     }
 
@@ -246,8 +261,7 @@ impl App<'_> {
             self.input
                 .set_agent_running(!matches!(new_status, PublicAgentState::Paused));
             self.status_bar
-                .set_agent_state(&format!("{:?}", new_status).to_lowercase());
-
+                .set_agent_mode(&format!("{:?}", self.input.agent_mode()));
             // Save session to disk when agent pauses (finishes processing)
             if matches!(new_status, PublicAgentState::Paused) {
                 if let Some(ref agent_ref) = self.agent {
@@ -532,16 +546,16 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+R — Retry/regenerate last response
+               // Handle Ctrl+R — Retry/regenerate last response
         if matches!(key_event.code, KeyCode::Char('r'))
             && key_event
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
             if let Some(ref agent) = self.agent {
-                let _ = agent.controller.stop_current_task().await;
+                let _ = agent.controller.regenerate().await;
                 self.input
-                    .alert_msg("Retrying last response...", Duration::from_secs(2));
+                    .alert_msg("Regenerating last response...", Duration::from_secs(2));
             }
             return Ok(());
         }
@@ -581,6 +595,23 @@ impl App<'_> {
                     let _ = agent.controller.sudo().await;
                     self.input
                         .alert_msg("Auto-approve enabled", Duration::from_secs(2));
+                }
+            }
+            return Ok(());
+        }
+
+        // Handle Shift+Tab — Cycle agent mode (Plan/Manual/Auto)
+        if key_event.code == KeyCode::BackTab {
+            let mode = self.input.cycle_agent_mode();
+            self.status_bar.set_agent_mode(&format!("{:?}", mode));
+            if let Some(ref agent) = self.agent {
+                match mode {
+                    AgentMode::Plan => {
+                        let _ = agent.controller.plan_mode().await;
+                    }
+                    AgentMode::Manual | AgentMode::Auto => {
+                        let _ = agent.controller.no_plan_mode().await;
+                    }
                 }
             }
             return Ok(());

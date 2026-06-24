@@ -14,10 +14,6 @@ impl App<'_> {
                 Vec::<String>::new(),
             ),
             (
-                ("/auth".to_string(), "select a provider".to_string()),
-                Vec::<String>::new(),
-            ),
-            (
                 (
                     "/tc".to_string(),
                     "set the tool call method: [fc | fc2 | so]".to_string(),
@@ -61,6 +57,13 @@ impl App<'_> {
             ),
             (
                 ("/skills".to_string(), "list available skills".to_string()),
+                Vec::<String>::new(),
+            ),
+            (
+                (
+                    "/regenerate".to_string(),
+                    "regenerate the last response".to_string(),
+                ),
                 Vec::<String>::new(),
             ),
         ])
@@ -129,6 +132,13 @@ impl App<'_> {
                         }
                         _ => {}
                     }
+                }
+            }
+            "/regenerate" => {
+                if let Some(ref agent) = self.agent {
+                    let _ = agent.controller.regenerate().await;
+                    self.input
+                        .alert_msg("Regenerating last response...", Duration::from_secs(2));
                 }
             }
             "/temp" => {

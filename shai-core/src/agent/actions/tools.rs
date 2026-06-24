@@ -52,6 +52,7 @@ impl AgentCore {
                 working_dir.clone(),
                 command_cache.clone(),
                 max_cached_commands,
+                self.todo_storage.clone(),
                 read_cache.clone(),
                 max_cached_reads,
             );
@@ -103,6 +104,7 @@ impl AgentCore {
         working_dir: Option<String>,
         command_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_commands: usize,
+        todo_storage: Arc<crate::tools::todo::TodoStorage>,
         read_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_reads: usize,
     ) -> tokio::task::JoinHandle<bool> {
@@ -356,6 +358,14 @@ impl AgentCore {
                         });
                     }
 
+                    // Emit TodoUpdated event after todo_write executes
+                    if tc_for_error.function.name == "todo_write" {
+                        let todos = todo_storage.get_all().await;
+                        if let Some(tx) = public_event_tx.clone() {
+                            let _ = tx.send(AgentEvent::TodoUpdated { todos });
+                        }
+                    }
+
                     tool_was_denied
                 }
             }
@@ -397,6 +407,12 @@ impl AgentCore {
                 };
 
             if !can_run {
+                let claims_guard = claims.read().await;
+                if claims_guard.is_plan_mode() {
+                    return ToolResult::error(
+                        "Tool execution is disabled in PLAN mode. Do not attempt to write, edit, or execute commands. Instead, describe the changes you would make as a detailed plan.".to_string(),
+                    );
+                }
                 return ToolResult::denied();
             }
 

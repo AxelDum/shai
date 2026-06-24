@@ -92,9 +92,10 @@ impl TodoWriteTool {
         self.storage.replace_all(todo_items.clone()).await;
 
         let output = self.storage.format_all(&todo_items);
+        let summary = format!("Updated {} todo items\n{}", todo_items.len(), output);
 
         ToolResult::Success {
-            output,
+            output: summary,
             metadata: Some({
                 let mut meta = HashMap::new();
                 meta.insert("todo_count".to_string(), json!(todo_items.len()));

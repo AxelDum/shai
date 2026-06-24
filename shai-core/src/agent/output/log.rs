@@ -89,6 +89,9 @@ impl FileEventLogger {
                     input_tokens + output_tokens
                 )
             }
+            AgentEvent::TodoUpdated { todos } => {
+                format!("TodoUpdated: {} item(s)", todos.len())
+            }
         };
 
         let log_line = format!(

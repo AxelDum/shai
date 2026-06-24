@@ -4,4 +4,4 @@ pub mod structs;
 #[cfg(test)]
 mod tests;
 
-pub use memory::{MemoryReadTool, MemoryWriteTool};
+pub use memory::{load_merged_memory, MemoryReadTool, MemoryWriteTool};

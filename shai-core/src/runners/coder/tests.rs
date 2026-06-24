@@ -1,5 +1,6 @@
 use super::coder::CoderBrain;
 use crate::agent::{Agent, Brain, StdoutEventManager, ThinkerContext};
+use crate::config::config::ShaiConfig;
 use crate::logging::LoggingConfig;
 use crate::tools::AnyTool;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
@@ -10,6 +11,15 @@ use std::sync::Once;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
+use crate::runners::test_helpers::DIR_TEST_MUTEX;
+
+/// Helper to get an LLM client + model from ShaiConfig.
+/// Falls back to environment variables if no config file exists.
+async fn get_llm() -> Result<(Arc<LlmClient>, String), Box<dyn std::error::Error>> {
+    let (client, model) = ShaiConfig::get_llm().await?;
+    Ok((Arc::new(client), model))
+}
+
 static INIT_LOGGING: Once = Once::new();
 fn init_test_logging() {
     INIT_LOGGING.call_once(|| {
@@ -19,8 +29,7 @@ fn init_test_logging() {
 
 // Helper function to create a coder agent with full toolbox
 async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {
-    let llm_client = Arc::new(LlmClient::first_from_env().expect("No LLM provider available"));
-    let model = llm_client.default_model().await.expect("default model");
+    let (llm_client, model) = get_llm().await.expect("No LLM provider available");
     println!("using model: {:?}", model);
 
     // Create shared storage for todo tools
@@ -51,6 +60,7 @@ async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {
 
 #[tokio::test]
 async fn test_coder_brain_creation() {
+    let (llm_client, model) = get_llm().await.expect("No LLM provider available");
     let llm_client = Arc::new(LlmClient::first_from_env().expect("No LLM provider available"));
     let model = llm_client.default_model().await.expect("default model");
 
@@ -61,8 +71,7 @@ async fn test_coder_brain_creation() {
 
 #[tokio::test]
 async fn test_coder_brain_think_simple() {
-    let llm_client = Arc::new(LlmClient::first_from_env().expect("No LLM provider available"));
-    let model = llm_client.default_model().await.expect("default model");
+    let (llm_client, model) = get_llm().await.expect("No LLM provider available");
     let mut brain = CoderBrain::new(llm_client, model);
 
     // Create test context with a simple message
@@ -75,6 +84,7 @@ async fn test_coder_brain_think_simple() {
         method: ToolCallMethod::FunctionCall,
         max_trace_chars: 50000,
         temperature: 0.0,
+        is_plan_mode: false,
     };
 
     let result = brain.next_step(context).await;
@@ -97,6 +107,7 @@ async fn test_coder_brain_think_simple() {
 #[tokio::test]
 async fn test_coder_integration_simple_file_creation() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let temp_path = temp_dir.path();
@@ -158,6 +169,7 @@ async fn test_coder_integration_simple_file_creation() {
 #[tokio::test]
 async fn test_multi_turn_conversation() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let temp_path = temp_dir.path();
@@ -212,6 +224,7 @@ async fn test_multi_turn_conversation() {
 #[tokio::test]
 async fn test_coder_integration_bug_fix_task() {
     init_test_logging();
+    let _guard = DIR_TEST_MUTEX.lock().await;
     // Create a temporary directory for this test
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let temp_path = temp_dir.path();

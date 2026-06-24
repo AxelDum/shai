@@ -43,6 +43,8 @@ impl Permission {
         }
     }
 
+    /// Add a permission
+
     pub fn with_description(mut self, description: String) -> Self {
         self.description = Some(description);
         self
@@ -122,6 +124,7 @@ pub struct ClaimManager {
     permissions: Vec<Permission>,
     config_file: Option<PathBuf>,
     sudo_mode: bool,
+    deny_all: bool,
 }
 
 impl ClaimManager {
@@ -131,6 +134,7 @@ impl ClaimManager {
             permissions: Vec::new(),
             config_file: None,
             sudo_mode: false,
+            deny_all: false,
         }
     }
 
@@ -140,6 +144,7 @@ impl ClaimManager {
             permissions: Vec::new(),
             config_file: Some(path),
             sudo_mode: false,
+            deny_all: false,
         }
     }
 
@@ -149,6 +154,7 @@ impl ClaimManager {
             permissions: Vec::new(),
             config_file: None,
             sudo_mode: true,
+            deny_all: false,
         }
     }
 
@@ -158,6 +164,7 @@ impl ClaimManager {
             permissions: Vec::new(),
             config_file: Some(path),
             sudo_mode: true,
+            deny_all: false,
         }
     }
 
@@ -169,6 +176,21 @@ impl ClaimManager {
     /// Disable sudo mode - re-enables permission checks
     pub fn no_sudo(&mut self) {
         self.sudo_mode = false;
+    }
+
+    /// Enable plan mode - denies all tool execution (read-only)
+    pub fn plan_mode(&mut self) {
+        self.deny_all = true;
+    }
+
+    /// Disable plan mode - re-enables tool execution
+    pub fn no_plan_mode(&mut self) {
+        self.deny_all = false;
+    }
+
+    /// Check if plan mode is enabled
+    pub fn is_plan_mode(&self) -> bool {
+        self.deny_all
     }
 
     /// Check if sudo mode is enabled
@@ -186,6 +208,11 @@ impl ClaimManager {
         // Sudo mode bypasses all permission checks
         if self.sudo_mode {
             return true;
+        }
+
+        // Plan mode denies all tool execution
+        if self.deny_all {
+            return false;
         }
 
         self.permissions

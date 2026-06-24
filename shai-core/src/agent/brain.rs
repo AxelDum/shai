@@ -13,7 +13,8 @@ pub struct ThinkerContext {
     pub available_tools: AnyToolBox,
     pub method: ToolCallMethod,
     pub max_trace_chars: usize,
-    pub temperature: f32,
+    pub temperature:      f32,
+    pub is_plan_mode:    bool,
 }
 
 /// ThinkerFlowControl drives the agentic flow

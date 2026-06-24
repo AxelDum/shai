@@ -4,8 +4,8 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use crate::tools::mcp::mcp_oauth::signin_oauth;
-use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
-use crate::config::agent::{AgentConfig, CompactionConfig};
+use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, MultiFileEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
+use crate::config::agent::{AgentConfig, CompactionConfig, VerificationConfig};
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
 use super::Brain;
@@ -22,6 +22,8 @@ pub struct AgentBuilder {
     pub available_tools: Vec<Box<dyn AnyTool>>,
     pub permissions: ClaimManager,
     pub compaction_config: CompactionConfig,
+    pub verification_config: VerificationConfig,
+    pub fs_operation_log: Arc<FsOperationLog>,
     pub working_dir: Option<String>,
 }
 
@@ -51,7 +53,8 @@ impl AgentBuilder {
 
         // Create default toolbox (using ToolConfig from shai-cli)
         // For now, create basic tools - we can expand this later
-        let tools = Self::create_default_tools();
+        let fs_log = Arc::new(FsOperationLog::new());
+        let tools = Self::create_default_tools(fs_log.clone());
 
         Ok(Self::with_brain(brain).tools(tools))
     }
@@ -66,19 +69,21 @@ impl AgentBuilder {
             available_tools: vec![],
             permissions: ClaimManager::new(),
             compaction_config: CompactionConfig::default(),
+            verification_config: VerificationConfig::default(),
+            fs_operation_log: Arc::new(FsOperationLog::new()),
             working_dir: None,
         }
     }
 
     /// Create default set of tools
-    fn create_default_tools() -> Vec<Box<dyn AnyTool>> {
-        let fs_log = Arc::new(FsOperationLog::new());
+    fn create_default_tools(fs_log: Arc<FsOperationLog>) -> Vec<Box<dyn AnyTool>> {
         let todo_storage = Arc::new(TodoStorage::new());
 
         vec![
             Box::new(BashTool::new()),
             Box::new(EditTool::new(fs_log.clone())),
             Box::new(MultiEditTool::new(fs_log.clone())),
+            Box::new(MultiFileEditTool::new(fs_log.clone())),
             Box::new(FetchTool::new()),
             Box::new(FindTool::new()),
             Box::new(LsTool::new()),
@@ -146,6 +151,8 @@ impl AgentBuilder {
             self.available_tools,
             self.permissions,
             self.compaction_config,
+            self.verification_config,
+            self.fs_operation_log,
             self.working_dir,
         )
     }
@@ -167,7 +174,8 @@ impl AgentBuilder {
         ));
 
         // Create tools
-        let tools = Self::create_tools_from_config(&mut config).await?;
+        let fs_log = Arc::new(FsOperationLog::new());
+        let tools = Self::create_tools_from_config(&mut config, fs_log.clone()).await?;
         
         // Display available tools by category
         let mut tool_groups: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
@@ -191,25 +199,24 @@ impl AgentBuilder {
 
         let mut builder = Self::with_brain(brain);
         builder.compaction_config = config.compaction.clone();
+        builder.verification_config = config.verification.clone();
+        builder.fs_operation_log = fs_log;
         Ok(builder
             .tools(tools)
             .id(&format!("agent-{}", config.name)))
     }
 
     /// Create tools from config
-    async fn create_tools_from_config(config: &mut AgentConfig) -> Result<Vec<Box<dyn AnyTool>>, AgentError> {
+    async fn create_tools_from_config(config: &mut AgentConfig, fs_log: Arc<FsOperationLog>) -> Result<Vec<Box<dyn AnyTool>>, AgentError> {
         let mut tools: Vec<Box<dyn AnyTool>> = Vec::new();
 
         // Create shared storage for todo tools
         let todo_storage = Arc::new(TodoStorage::new());
         
-        // Create shared operation log for file system tools
-        let fs_log = Arc::new(FsOperationLog::new());
-
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
             // Add all builtin tools
-            vec!["bash", "edit", "multiedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
+            vec!["bash", "edit", "multiedit", "multifileedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()
@@ -225,6 +232,7 @@ impl AgentBuilder {
                 "bash" => tools.push(Box::new(BashTool::new())),
                 "edit" => tools.push(Box::new(EditTool::new(fs_log.clone()))),
                 "multiedit" => tools.push(Box::new(MultiEditTool::new(fs_log.clone()))),
+                "multifileedit" => tools.push(Box::new(MultiFileEditTool::new(fs_log.clone()))),
                 "fetch" => tools.push(Box::new(FetchTool::new())),
                 "find" => tools.push(Box::new(FindTool::new())),
                 "ls" => tools.push(Box::new(LsTool::new())),

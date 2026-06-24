@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, broadcast, RwLock, oneshot};
 use serde::{Serialize, Deserialize};
 use async_trait::async_trait;
 use crate::tools::AnyTool;
+use crate::tools::fs::operation_log::FsOperationLog;
 use crate::agent::ClaimManager;
 
 // Helper functions to make the main loop more readable
@@ -18,7 +19,7 @@ use tracing::debug;
 
 use super::protocol::{AgentController, SentCommand};
 use super::{AgentResponse, AgentEventHandler};
-use crate::config::agent::CompactionConfig;
+use crate::config::agent::{CompactionConfig, VerificationConfig};
 
 /// Trait defining the public interface for agents
 #[async_trait]
@@ -72,6 +73,8 @@ pub struct AgentCore {
     pub permissions:     Arc<RwLock<ClaimManager>>,
     pub state:           InternalAgentState,
     pub compaction_config: CompactionConfig,
+    pub verification_config: VerificationConfig,
+    pub fs_operation_log: Arc<FsOperationLog>,
     pub working_dir: Option<String>,
 
     /// Tracks tool calls since last user input for max_tool_calls_per_turn limit
@@ -101,6 +104,8 @@ impl AgentCore {
         available_tools: Vec<Box<dyn AnyTool>>,
         permissions: ClaimManager,
         compaction_config: CompactionConfig,
+        verification_config: VerificationConfig,
+        fs_operation_log: Arc<FsOperationLog>,
         working_dir: Option<String>,
     ) -> Self {
         let (internal_tx, internal_rx) = broadcast::channel(1024);
@@ -120,6 +125,8 @@ impl AgentCore {
             permissions: Arc::new(RwLock::new(permissions)),
             state: InternalAgentState::Starting,
             compaction_config,
+            verification_config,
+            fs_operation_log,
             working_dir,
             tool_call_count: Arc::new(RwLock::new(0)),
             command_cache: Arc::new(RwLock::new(Vec::new())),

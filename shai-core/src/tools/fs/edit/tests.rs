@@ -44,7 +44,7 @@ async fn test_edit_file_replacement() {
         old_string: "Hello".to_string(),
         new_string: "Hi".to_string(),
         replace_all: false,
-    };
+                    line_hash: None,    };
 
     let result = tool.execute(params, None).await;
     assert!(result.is_success());
@@ -73,7 +73,7 @@ async fn test_edit_preview_functionality() {
         old_string: "Hello".to_string(),
         new_string: "Hi".to_string(),
         replace_all: false,
-    };
+                    line_hash: None,    };
 
     // Test preview - should return Some(ToolResult) with diff
     let preview_result = tool.execute_preview(params.clone()).await;
@@ -176,7 +176,7 @@ async fn test_execute_vs_preview_behavior() {
         old_string: "Original".to_string(),
         new_string: "Modified".to_string(),
         replace_all: false,
-    };
+                    line_hash: None,    };
 
     // Preview should not modify file
     let preview_result = tool.execute_preview(params.clone()).await;

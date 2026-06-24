@@ -1,5 +1,6 @@
 use super::super::{FsOperationLog, FsOperationType};
 use super::structs::ReadToolParams;
+use crate::tools::fs::hash::compute_line_hash;
 use crate::tools::{tool, ToolResult};
 use serde_json::json;
 use std::collections::HashMap;
@@ -116,7 +117,10 @@ impl ReadTool {
         if show_line_numbers {
             lines
                 .iter()
-                .map(|(line_num, content)| format!("{:4}: {}", line_num, content))
+                .map(|(line_num, content)| {
+                    let hash = compute_line_hash(content);
+                    format!("{:4}: {} {}", line_num, hash, content)
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         } else {

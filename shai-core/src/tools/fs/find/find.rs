@@ -8,7 +8,9 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use walkdir::WalkDir;
 
-pub struct FindTool;
+pub struct FindTool {
+    default_exclude_patterns: Vec<String>,
+}
 
 impl Default for FindTool {
     fn default() -> Self {
@@ -18,7 +20,14 @@ impl Default for FindTool {
 
 impl FindTool {
     pub fn new() -> Self {
-        Self
+        Self {
+            default_exclude_patterns: Vec::new(),
+        }
+    }
+
+    pub fn with_exclude_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.default_exclude_patterns = patterns;
+        self
     }
 
     fn should_include_file(
@@ -29,7 +38,14 @@ impl FindTool {
     ) -> bool {
         let path_str = path.to_string_lossy();
 
-        // Check exclude patterns first
+        // Check default exclude patterns from config
+        for pattern in &self.default_exclude_patterns {
+            if path_str.contains(pattern.as_str()) {
+                return false;
+            }
+        }
+
+        // Check per-call exclude patterns
         if let Some(exclude) = exclude_patterns {
             for pattern in exclude.split(',') {
                 let pattern = pattern.trim();
@@ -145,7 +161,9 @@ impl FindTool {
 - Exclude irrelevant directories and files (like `target` or `.git`) using the `exclude_patterns` parameter to speed up the search.
 
 **Output:**
-- Returns a list of matching file paths, sorted with the most recently modified files appearing first. This helps prioritize recently changed files."#, capabilities = [ToolCapability::Read])]
+- Returns a list of matching file paths, sorted with the most recently modified files appearing first. This helps prioritize recently changed files.
+
+**IMPORTANT:** This is the preferred tool for searching files by name or content. Do not use `bash` with `grep` or `find` commands — use this tool instead."#, capabilities = [ToolCapability::Read])]
 
 impl FindTool {
     async fn execute(&self, params: FindToolParams) -> ToolResult {

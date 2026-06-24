@@ -1,6 +1,7 @@
 use crate::provider::LlmError;
 use openai_dive::v1::resources::chat::ChatCompletionParameters;
 use std::path::PathBuf;
+use tracing::{debug, warn};
 
 /// Log a failed LLM request to a file for debugging
 ///
@@ -24,7 +25,7 @@ pub fn log_llm_error(request: &ChatCompletionParameters, error: &LlmError, provi
 
     // Create directory if it doesn't exist
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!("Failed to create error log directory: {}", e);
+        warn!(target: "shai_llm::logging", "Failed to create error log directory: {}", e);
         return;
     }
 
@@ -60,8 +61,8 @@ pub fn log_llm_error(request: &ChatCompletionParameters, error: &LlmError, provi
 
     // Write to file
     if let Err(e) = std::fs::write(&log_path, log_content) {
-        eprintln!("Failed to write error log to {}: {}", log_path.display(), e);
+        warn!(target: "shai_llm::logging", "Failed to write error log to {}: {}", log_path.display(), e);
     } else {
-        eprintln!("LLM error logged to: {}", log_path.display());
+        debug!(target: "shai_llm::logging", "LLM error logged to: {}", log_path.display());
     }
 }

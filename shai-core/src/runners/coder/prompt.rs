@@ -1,6 +1,8 @@
 use std::fs;
 use std::sync::Arc;
 
+use tracing::{debug, warn};
+
 use crate::tools::{AnyTool, ToolResult};
 
 use super::env::*;
@@ -33,6 +35,14 @@ When modifying code, adhere to the existing style, libraries, and patterns of th
  * Use the provided tools to interact with the user's environment.
  * Do not use comments in code to communicate with the user.
  * Use the `todo_write` and `todo_read` tools to plan and track your work, especially for complex tasks. This provide visibility to the user. You must use these tools extensively.
+ * Prefer dedicated tools over bash commands:
+   - Use `read` instead of `cat`, `less`, `head`, `tail`, or `bat`
+   - Use `find` instead of `grep` or `find` commands
+   - Use `ls` instead of `ls` or `dir` commands
+   - Use `edit` instead of `sed`, `awk`, or `perl` for file modifications
+   - Use `write` instead of redirect operators (`>`, `>>`)
+   - Use `bash` only for compiling, testing, running scripts, git operations, and other commands without a dedicated tool
+ * When exploring an unfamiliar codebase, use `outline: true` on the first read to understand file structure before reading full content.
 
 **No Surprises:** 
 Do not commit changes to version control unless explicitly asked to do so by the user.
@@ -127,7 +137,7 @@ fn load_agents_content() -> String {
         Ok(content) => compact_agents_content(&content),
         Err(e) => {
             if agents_path.exists() {
-                eprintln!("\x1b[2m\u{26a0} Failed to read AGENTS.md: {}\\x1b[0m", e);
+                warn!(target: "brain::coder", "Failed to read AGENTS.md: {}", e);
             }
             String::new()
         }
@@ -142,15 +152,13 @@ fn load_shai_content() -> String {
     match fs::read_to_string(&shai_path) {
         Ok(content) => {
             if !content.is_empty() {
-                eprintln!(
-                    "\x1b[2m⚠ SHAI.md is deprecated, please consider migrating to AGENTS.md\x1b[0m"
-                );
+                warn!(target: "brain::coder", "SHAI.md is deprecated, please consider migrating to AGENTS.md");
             }
             content
         }
         Err(e) => {
             if shai_path.exists() {
-                eprintln!("\x1b[2m⚠ Failed to read SHAI.md: {}\x1b[0m", e);
+                warn!(target: "brain::coder", "Failed to read SHAI.md: {}", e);
             }
             String::new()
         }
@@ -319,7 +327,7 @@ todoStatus: This is the current status of the todo list
 
 pub async fn get_todo_read(todo_tool: &Arc<dyn AnyTool>) -> String {
     let todo = todo_tool.execute_json(serde_json::json!({}), None).await;
-    if let ToolResult::Success { output, metadata } = todo {
+    if let ToolResult::Success { output, .. } = todo {
         TODO_STATUS.to_string().replace("{{TODO_LIST}}", &output)
     } else {
         TODO_STATUS

@@ -45,7 +45,7 @@ impl TodoReadTool {
         Self { storage }
     }
 
-    async fn execute(&self, params: ToolEmptyParams) -> ToolResult {
+    async fn execute(&self, _params: ToolEmptyParams) -> ToolResult {
         let todos = self.storage.get_all().await;
 
         let output = self.storage.format_all(&todos);

@@ -136,7 +136,10 @@ impl AgentController {
     }
 
     pub async fn set_temperature(&self, temperature: f32) -> Result<f32, AgentError> {
-        match self.send(AgentRequest::SetTemperature { temperature }).await? {
+        match self
+            .send(AgentRequest::SetTemperature { temperature })
+            .await?
+        {
             AgentResponse::Temperature { temperature } => Ok(temperature),
             _ => Err(AgentError::InvalidResponse(
                 "Expected Temperature response".to_string(),

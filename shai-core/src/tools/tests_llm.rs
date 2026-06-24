@@ -3,8 +3,8 @@ mod llm_integration_tests {
     use crate::config::config::ShaiConfig;
     use crate::logging::LoggingConfig;
     use crate::tools::{
-        AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, MultiEditTool,
-        ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
+        AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, ReadTool,
+        TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
     };
     use openai_dive::v1::resources::chat::{
         ChatCompletionParametersBuilder, ChatCompletionToolChoice,
@@ -240,10 +240,10 @@ mod llm_integration_tests {
 
     #[tokio::test]
     async fn test_multiedit_tool_with_llm() {
-        let tool: Arc<dyn AnyTool> = Arc::new(MultiEditTool::new(Arc::new(FsOperationLog::new())));
+        let tool: Arc<dyn AnyTool> = Arc::new(EditTool::new(Arc::new(FsOperationLog::new())));
         llm_test_with_fallback!(
             test_tool_with_llm(tool, "In the file 'Cargo.toml', replace 'name' with 'project_name' and 'v0.0.1' with 'v0.0.2'"),
-            "MultiEditTool should be called by LLM"
+            "EditTool should be called by LLM"
         );
     }
 }

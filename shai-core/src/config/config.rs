@@ -261,7 +261,10 @@ impl Default for ShaiConfig {
 
 impl ShaiConfig {
     pub async fn get_llm() -> Result<(LlmClient, String), Box<dyn std::error::Error>> {
-        let config = ShaiConfig::load().unwrap_or_else(|_| ShaiConfig::default());
+        let config = ShaiConfig::load().unwrap_or_else(|e| {
+            tracing::warn!("Failed to load config, using default: {}", e);
+            ShaiConfig::default()
+        });
 
         config.set_env_vars();
 

@@ -153,7 +153,13 @@ Development Workflow:
 
 Usage Guidelines:
 - this tool always runs from the same path. If you need to execute command in another directory, chain the commands with && for instance "cd subcrate && cargo test"
-- For file system navigation and inspection, prefer the built-in ls, read, and find tools. Use bash for executing other programs or scripts.
+- Do NOT use bash for file operations that have dedicated tools:
+  - Use `read` instead of `cat`, `less`, `head`, `tail`, or `bat`
+  - Use `find` instead of `grep` or `find` commands
+  - Use `ls` instead of `ls` or `dir` commands
+  - Use `edit` instead of `sed`, `awk`, or `perl` for file modifications
+  - Use `write` instead of redirect operators (`>`, `>>`)
+- Use bash only for compiling, testing, running scripts, git operations, and other commands without a dedicated tool.
 - Always provide a clear, concise description of the command's purpose for the user.
 - Chain commands using && to ensure that subsequent commands only run if the previous ones succeed.
 - Enclose file paths and arguments in double quotes (") to handle spaces and special characters correctly.

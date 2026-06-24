@@ -69,6 +69,12 @@ pub struct CompactionConfig {
     pub max_cached_commands: usize,
     #[serde(default = "default_max_trace_chars")]
     pub max_trace_chars: usize,
+    /// Maximum number of cached read results (per file path + line range)
+    #[serde(default = "default_max_cached_reads")]
+    pub max_cached_reads: usize,
+    /// Default exclusion patterns for the find tool (substrings matched against file paths)
+    #[serde(default = "default_find_exclude_patterns")]
+    pub find_exclude_patterns: Vec<String>,
 }
 
 impl Default for CompactionConfig {
@@ -76,11 +82,27 @@ impl Default for CompactionConfig {
         Self {
             enabled: true,
             max_output_chars: 8000,
-            max_tool_calls_per_turn: Some(30),
+            max_tool_calls_per_turn: Some(100),
             max_cached_commands: 50,
             max_trace_chars: 50000,
+            max_cached_reads: 100,
+            find_exclude_patterns: default_find_exclude_patterns(),
         }
     }
+}
+
+fn default_max_cached_reads() -> usize {
+    100
+}
+
+fn default_find_exclude_patterns() -> Vec<String> {
+    vec![
+        ".git".to_string(),
+        "target".to_string(),
+        "node_modules".to_string(),
+        ".next".to_string(),
+        "dist".to_string(),
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,10 +136,22 @@ fn default_verification_timeout_secs() -> u64 {
 fn default_verification_commands() -> HashMap<String, Vec<String>> {
     let mut commands = HashMap::new();
     commands.insert("rust".to_string(), vec!["cargo".into(), "check".into()]);
-    commands.insert("go".to_string(), vec!["go".into(), "build".into(), "./...".into()]);
-    commands.insert("python".to_string(), vec!["python".into(), "-m".into(), "py_compile".into()]);
-    commands.insert("typescript".to_string(), vec!["node".into(), "--check".into()]);
-    commands.insert("javascript".to_string(), vec!["node".into(), "--check".into()]);
+    commands.insert(
+        "go".to_string(),
+        vec!["go".into(), "build".into(), "./...".into()],
+    );
+    commands.insert(
+        "python".to_string(),
+        vec!["python".into(), "-m".into(), "py_compile".into()],
+    );
+    commands.insert(
+        "typescript".to_string(),
+        vec!["node".into(), "--check".into()],
+    );
+    commands.insert(
+        "javascript".to_string(),
+        vec!["node".into(), "--check".into()],
+    );
     commands.insert("perl".to_string(), vec!["perl".into(), "-c".into()]);
     commands.insert("ruby".to_string(), vec!["ruby".into(), "-c".into()]);
     commands.insert("bash".to_string(), vec!["bash".into(), "-n".into()]);
@@ -135,7 +169,7 @@ fn default_max_output_chars() -> usize {
 }
 
 fn default_max_tool_calls_per_turn() -> Option<usize> {
-    Some(30)
+    Some(100)
 }
 
 fn default_max_trace_chars() -> usize {
@@ -143,8 +177,10 @@ fn default_max_trace_chars() -> usize {
 }
 
 fn default_llm_provider() -> AgentProviderConfig {
-    // Load the default provider from ShaiConfig
-    let shai_config = ShaiConfig::load().unwrap_or_else(|_| ShaiConfig::default());
+    let shai_config = ShaiConfig::load().unwrap_or_else(|e| {
+        tracing::warn!("Failed to load config, using default: {}", e);
+        ShaiConfig::default()
+    });
 
     let provider_config = shai_config
         .get_selected_provider()

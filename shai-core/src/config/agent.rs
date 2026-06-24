@@ -84,7 +84,7 @@ impl Default for CompactionConfig {
             max_output_chars: 8000,
             max_tool_calls_per_turn: Some(100),
             max_cached_commands: 50,
-            max_trace_chars: 200000,
+            max_trace_chars: 85000,
             max_cached_reads: 100,
             find_exclude_patterns: default_find_exclude_patterns(),
         }
@@ -173,7 +173,7 @@ fn default_max_tool_calls_per_turn() -> Option<usize> {
 }
 
 fn default_max_trace_chars() -> usize {
-    50000
+    85000
 }
 
 fn default_llm_provider() -> AgentProviderConfig {

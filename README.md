@@ -186,6 +186,39 @@ shai --temperature 0.3 "fix this bug"
 }
 ```
 
+### Tool Usage Limits
+
+Shai limits the number of tool calls the agent can make per user turn to prevent runaway loops. When the limit is reached, the agent wraps up its response instead of executing further tools.
+
+This is controlled by the `max_tool_calls_per_turn` setting in the agent's compaction config (default: `100`):
+
+```json
+{
+  "compaction": {
+    "max_tool_calls_per_turn": 100
+  }
+}
+```
+
+Set it to `null` to remove the limit entirely:
+
+```json
+{
+  "compaction": {
+    "max_tool_calls_per_turn": null
+  }
+}
+```
+
+Other related compaction settings:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_output_chars` | `8000` | Maximum characters per tool output before truncation |
+| `max_trace_chars` | `50000` | Character threshold above which older trace entries are compacted |
+| `max_cached_commands` | `50` | Number of recent bash commands cached for duplicate detection |
+| `max_cached_reads` | `100` | Number of file reads cached for duplicate detection |
+
 ### OVHCloud Endpoints
 
 OVHCloud provides compatible LLM endpoints for using shai with tools. Start by creating a [_Public Cloud_ project in your OVHCloud account](https://www.ovh.com/manager/#/public-cloud), then head to _AI Endpoints_ and retreive your API key. After setting it in shai, you can:

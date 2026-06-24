@@ -82,7 +82,7 @@ impl Default for CompactionConfig {
         Self {
             enabled: true,
             max_output_chars: 8000,
-            max_tool_calls_per_turn: Some(30),
+            max_tool_calls_per_turn: Some(100),
             max_cached_commands: 50,
             max_trace_chars: 50000,
             max_cached_reads: 100,
@@ -169,7 +169,7 @@ fn default_max_output_chars() -> usize {
 }
 
 fn default_max_tool_calls_per_turn() -> Option<usize> {
-    Some(30)
+    Some(100)
 }
 
 fn default_max_trace_chars() -> usize {

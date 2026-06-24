@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use ansi_to_tui::IntoText;
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
-    widgets::{Paragraph, Widget},
+    widgets::{Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -102,11 +101,11 @@ impl ConversationHistory {
             .join("\n");
 
         if let Ok(text) = combined.into_text() {
-            let paragraph = Paragraph::new(text);
+            let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
             f.render_widget(paragraph, area);
         } else {
             // Fallback: render as plain text
-            let paragraph = Paragraph::new(combined);
+            let paragraph = Paragraph::new(combined).wrap(Wrap { trim: false });
             f.render_widget(paragraph, area);
         }
     }

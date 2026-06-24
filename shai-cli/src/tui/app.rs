@@ -16,11 +16,9 @@ use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
-use ratatui::text::Text;
 use ratatui::Terminal;
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Style},
     widgets::Widget,
     Frame, TerminalOptions, Viewport,
 };
@@ -63,7 +61,6 @@ pub struct AppRunningAgent {
 
 pub struct App<'a> {
     pub(crate) terminal: Option<Terminal<CrosstermBackend<io::Stdout>>>,
-    pub(crate) terminal_height: u16,
 
     pub(crate) agent: Option<AppRunningAgent>,
     pub(crate) custom_agent: Option<Box<dyn Agent>>,
@@ -225,17 +222,7 @@ impl App<'_> {
             };
 
             if let Some(text) = formatted {
-                if let Some(ref mut terminal) = self.terminal {
-                    let wrapped = text.into_text().unwrap();
-                    let line_count = wrapped.lines.len() as u16;
-                    terminal.clear().ok();
-                    if let Err(e) = terminal.insert_before(line_count, |buf| {
-                        wrapped.render(buf.area, buf);
-                    }) {
-                        warn!(target: "agent::loop", "Failed to insert restored trace: {}", e);
-                    }
-                    self.history.add_text(&text);
-                }
+                self.history.add_text(&text);
             }
         }
     }
@@ -320,17 +307,8 @@ impl App<'_> {
                 }
             }
 
-            if let Some(ref mut terminal) = self.terminal {
-                let wrapped = formatted.into_text().unwrap();
-                let line_count = wrapped.lines.len() as u16;
-                terminal.clear()?; // this is to avoid visual artifact
-                terminal.insert_before(line_count, |buf| {
-                    wrapped.render(buf.area, buf);
-                })?;
-
-                // Also add to conversation history
-                self.history.add_text(&formatted);
-            }
+            // Add to conversation history (rendered by draw_ui)
+            self.history.add_text(&formatted);
         }
 
         // Handle permission requests - just add to queue
@@ -359,16 +337,8 @@ impl App<'_> {
 
         // Handle error events - display inline in red
         if let AgentEvent::Error { error } = &event {
-            let error_msg = format!("\x1b[31m❌ Error: {}\x1b[0m", error);
-            if let Some(ref mut terminal) = self.terminal {
-                let wrapped = error_msg.into_text().unwrap();
-                let line_count = wrapped.lines.len() as u16;
-                terminal.clear()?;
-                terminal.insert_before(line_count, |buf| {
-                    wrapped.render(buf.area, buf);
-                })?;
-                self.history.add_text(&error_msg);
-            }
+            let error_msg = format!("\x1b[31m✘ Error: {}\x1b[0m", error);
+            self.history.add_text(&error_msg);
         }
 
         Ok(())
@@ -383,7 +353,6 @@ impl App<'_> {
 
         Self {
             terminal: None,
-            terminal_height: 5,
             agent: None,
             custom_agent: None,
             formatter: PrettyFormatter::new(),
@@ -457,7 +426,7 @@ impl App<'_> {
 
         // create terminal
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
-            viewport: Viewport::Inline(8),
+            viewport: Viewport::Fullscreen,
         }));
 
         std::io::stdout().flush().ok();
@@ -764,28 +733,26 @@ impl App<'_> {
         .max(5);
 
         let running_tools_height = self.running_tools.len() as u16;
-        let height = modal_height + 1 + running_tools_height + 1; // status bar
 
         if let Some(ref mut terminal) = self.terminal {
-            if height != self.terminal_height {
-                terminal.set_viewport_height(height + 1)?;
-                self.terminal_height = height;
-            }
-
             terminal.draw(|frame| {
-                let [_, inprogress, modal, statusbar] = Layout::vertical([
-                    Constraint::Length(1),                        // padding
-                    Constraint::Length(running_tools_height + 1), // running tool (if any)
-                    Constraint::Length(modal_height),             // input or modal
-                    Constraint::Length(1),                        // status bar
+                let [_, history_area, tools_area, modal_area, statusbar_area] = Layout::vertical([
+                    Constraint::Length(1),                    // padding
+                    Constraint::Fill(1),                      // conversation history
+                    Constraint::Length(running_tools_height), // running tools
+                    Constraint::Length(modal_height),         // input or modal
+                    Constraint::Length(1),                    // status bar
                 ])
                 .areas(frame.area());
+
+                // draw conversation history
+                self.history.draw(frame, history_area);
 
                 // draw running tool with duration
                 if !self.running_tools.is_empty() {
                     let layout: std::rc::Rc<[Rect]> =
-                        Layout::vertical(vec![Constraint::Length(1); self.running_tools.len() + 1])
-                            .split(inprogress);
+                        Layout::vertical(vec![Constraint::Length(1); self.running_tools.len()])
+                            .split(tools_area);
                     for ((tool_id, tc), &area) in self.running_tools.iter().zip(&*layout) {
                         let elapsed = self
                             .tool_start_times
@@ -803,14 +770,15 @@ impl App<'_> {
 
                 // draw modal
                 match &self.state {
-                    AppModalState::InputShown => self.input.draw(frame, modal),
-                    AppModalState::PermissionModal { widget } => widget.draw(frame, modal),
+                    AppModalState::InputShown => self.input.draw(frame, modal_area),
+                    AppModalState::PermissionModal { widget } => widget.draw(frame, modal_area),
                 }
 
                 // draw status bar
-                self.status_bar.draw(frame, statusbar);
+                self.status_bar.draw(frame, statusbar_area);
             })?;
         }
+
         Ok(())
     }
 }

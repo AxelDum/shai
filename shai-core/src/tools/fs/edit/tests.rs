@@ -40,7 +40,7 @@ async fn test_edit_file_replacement() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: "Hello".to_string(),
                 new_string: "Hi".to_string(),
@@ -74,7 +74,7 @@ async fn test_edit_preview_functionality() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: "Hello".to_string(),
                 new_string: "Hi".to_string(),
@@ -121,7 +121,7 @@ async fn test_edit_multiple_replacements() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![
                 EditOperation {
                     old_string: "Hello".to_string(),
@@ -172,7 +172,7 @@ async fn test_edit_multifile_basic() {
     let params = EditToolParams {
         files: vec![
             FileEdit {
-                file_path: file_a.to_string_lossy().to_string(),
+                path: file_a.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: "Hello".to_string(),
                     new_string: "Greetings".to_string(),
@@ -182,7 +182,7 @@ async fn test_edit_multifile_basic() {
                 }],
             },
             FileEdit {
-                file_path: file_b.to_string_lossy().to_string(),
+                path: file_b.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: "Goodbye".to_string(),
                     new_string: "Farewell".to_string(),
@@ -224,7 +224,7 @@ async fn test_edit_multifile_atomicity() {
     let params = EditToolParams {
         files: vec![
             FileEdit {
-                file_path: file_a.to_string_lossy().to_string(),
+                path: file_a.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: "Hello".to_string(),
                     new_string: "Hi".to_string(),
@@ -234,7 +234,7 @@ async fn test_edit_multifile_atomicity() {
                 }],
             },
             FileEdit {
-                file_path: file_b.to_string_lossy().to_string(),
+                path: file_b.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: "NONEXISTENT".to_string(),
                     new_string: "error".to_string(),
@@ -262,7 +262,7 @@ async fn test_edit_not_read_yet() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_a.to_string_lossy().to_string(),
+            path: file_a.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: "Hello".to_string(),
                 new_string: "Hi".to_string(),
@@ -302,7 +302,7 @@ async fn test_hash_anchored_edit_basic() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "    println!(\"goodbye\");".to_string(),
@@ -338,7 +338,7 @@ async fn test_hash_anchored_edit_not_found() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "replaced".to_string(),
@@ -369,7 +369,7 @@ async fn test_hash_anchored_edit_replace_all() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "x = 0".to_string(),
@@ -402,7 +402,7 @@ async fn test_hash_anchored_edit_first_match_only() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "x = 0".to_string(),
@@ -443,7 +443,7 @@ async fn test_hash_anchored_multifile_edit() {
     let params = EditToolParams {
         files: vec![
             FileEdit {
-                file_path: file_a.to_string_lossy().to_string(),
+                path: file_a.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: String::new(),
                     new_string: "fn foo() -> u32 { 42 }".to_string(),
@@ -453,7 +453,7 @@ async fn test_hash_anchored_multifile_edit() {
                 }],
             },
             FileEdit {
-                file_path: file_b.to_string_lossy().to_string(),
+                path: file_b.to_string_lossy().to_string(),
                 edits: vec![EditOperation {
                     old_string: String::new(),
                     new_string: "fn bar() -> u32 { 0 }".to_string(),
@@ -493,7 +493,7 @@ async fn test_insert_after_hash_basic() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "    println!(\"hello\");".to_string(),
@@ -530,7 +530,7 @@ async fn test_insert_after_hash_not_found() {
     let tool = EditTool::new(log);
     let params = EditToolParams {
         files: vec![FileEdit {
-            file_path: file_path.to_string_lossy().to_string(),
+            path: file_path.to_string_lossy().to_string(),
             edits: vec![EditOperation {
                 old_string: String::new(),
                 new_string: "    println!(\"hello\");".to_string(),

@@ -283,14 +283,14 @@ impl AgentCore {
                         // Invalidate read cache entries for edited files
                         if call.tool_name == "edit" || call.tool_name == "write" {
                             let edited_paths: Vec<String> = if call.tool_name == "edit" {
-                                // edit tool uses files: [{file_path, edits: [...]}]
+                                // edit tool uses files: [{path, edits: [...]}]
                                 call.parameters
                                     .get("files")
                                     .and_then(|v| v.as_array())
                                     .map(|arr| {
                                         arr.iter()
                                             .filter_map(|f| {
-                                                f.get("file_path")
+                                                f.get("path")
                                                     .and_then(|p| p.as_str())
                                                     .map(String::from)
                                             })
@@ -494,7 +494,14 @@ impl AgentCore {
     ) -> Result<(Arc<dyn AnyTool>, ToolCall), ToolResult> {
         from_str(&tc.function.arguments)
             .map_err(|_e| ToolResult::error("failed to parse tool parameters".to_string()))
-            .and_then(|params| {
+            .and_then(|mut params| {
+                // Unwrap string-encoded JSON parameters (e.g. when the LLM
+                // returns tool parameters as a JSON string instead of an object)
+                if let serde_json::Value::String(ref s) = params {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                        params = parsed;
+                    }
+                }
                 let tool_call = ToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),

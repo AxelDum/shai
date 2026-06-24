@@ -100,7 +100,7 @@ mod integration_tests {
             .execute(
                 EditToolParams {
                     files: vec![FileEdit {
-                        file_path: file_path.to_string_lossy().to_string(),
+                        path: file_path.to_string_lossy().to_string(),
                         edits: vec![
                             EditOperation {
                                 old_string: "Hello, World!".to_string(),
@@ -189,7 +189,7 @@ mod integration_tests {
             .execute(
                 EditToolParams {
                     files: vec![FileEdit {
-                        file_path: file1_path.to_string_lossy().to_string(),
+                        path: file1_path.to_string_lossy().to_string(),
                         edits: vec![EditOperation {
                             old_string: "Content".to_string(),
                             new_string: "Modified content".to_string(),
@@ -223,7 +223,7 @@ mod integration_tests {
             .execute(
                 EditToolParams {
                     files: vec![FileEdit {
-                        file_path: file1_path.to_string_lossy().to_string(),
+                        path: file1_path.to_string_lossy().to_string(),
                         edits: vec![EditOperation {
                             old_string: "Content".to_string(),
                             new_string: "Modified content".to_string(),
@@ -317,7 +317,7 @@ mod integration_tests {
             .execute(
                 EditToolParams {
                     files: vec![FileEdit {
-                        file_path: config_path.to_string_lossy().to_string(),
+                        path: config_path.to_string_lossy().to_string(),
                         edits: vec![EditOperation {
                             old_string: r#""version": "1.0""#.to_string(),
                             new_string: r#""version": "2.0""#.to_string(),
@@ -353,7 +353,7 @@ mod integration_tests {
             .execute(
                 EditToolParams {
                     files: vec![FileEdit {
-                        file_path: script_path.to_string_lossy().to_string(),
+                        path: script_path.to_string_lossy().to_string(),
                         edits: vec![EditOperation {
                             old_string: "Hello, Python!".to_string(),
                             new_string: "Hello, World from Python!".to_string(),

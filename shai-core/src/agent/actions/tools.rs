@@ -29,7 +29,9 @@ impl AgentCore {
         let compaction_config = self.compaction_config.clone();
         let working_dir = self.working_dir.clone();
         let command_cache = self.command_cache.clone();
+        let read_cache = self.read_cache.clone();
         let max_cached_commands = self.compaction_config.max_cached_commands;
+        let max_cached_reads = self.compaction_config.max_cached_reads;
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
@@ -48,6 +50,8 @@ impl AgentCore {
                 working_dir.clone(),
                 command_cache.clone(),
                 max_cached_commands,
+                read_cache.clone(),
+                max_cached_reads,
             );
             join_handles.push(handle);
         }
@@ -96,6 +100,8 @@ impl AgentCore {
         working_dir: Option<String>,
         command_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_commands: usize,
+        read_cache: Arc<RwLock<Vec<(String, String)>>>,
+        max_cached_reads: usize,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();
@@ -155,10 +161,31 @@ impl AgentCore {
                         None
                     };
 
+                    // Check read cache for read tool calls
+                    let read_cache_key = if call.tool_name == "read" {
+                        let path = call.parameters.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                        let line_start = call.parameters.get("line_start").map(|v| v.as_u64().unwrap_or(0)).unwrap_or(0);
+                        let line_end = call.parameters.get("line_end").map(|v| v.as_u64().unwrap_or(0)).unwrap_or(0);
+                        Some(format!("{}:{}:{}:{}", path, line_start, line_end, call.parameters.get("show_line_numbers").map(|v| v.as_bool().unwrap_or(false)).unwrap_or(false)))
+                    } else {
+                        None
+                    };
+
+                    let cached_read = if let Some(ref _key) = read_cache_key {
+                        let cache = read_cache.read().await;
+                        cache.iter().rev().find(|(c, _)| c == _key.as_str()).map(|(_, output)| output.clone())
+                    } else {
+                        None
+                    };
+
                     // Execute or use cached result
                     let result: ToolResult = if let Some(cached) = cached_output {
                         ToolResult::success(format!(
                             "[cached] You just ran this command. The result is the same.\n\n{}", cached
+                        ))
+                    } else if let Some(ref cached) = cached_read {
+                        ToolResult::success(format!(
+                            "[cached] This file was read recently and hasn't changed.\n\n{}", cached
                         ))
                     } else {
                         // execute tool
@@ -198,6 +225,48 @@ impl AgentCore {
                             cache.push((cmd.clone(), compacted));
                             if cache.len() > max_cached_commands {
                                 cache.remove(0);
+                            }
+                        }
+
+                        // Cache the result if it was a read command
+                        if let Some(ref key) = read_cache_key {
+                            let compacted = compact_tool_result(
+                                &call.tool_name,
+                                exec_result.metadata(),
+                                &exec_result.to_string(),
+                                &compaction_config,
+                            );
+                            let mut cache = read_cache.write().await;
+                            cache.push((key.clone(), compacted));
+                            if cache.len() > max_cached_reads {
+                                cache.remove(0);
+                            }
+                        }
+
+                        // Invalidate read cache entries for edited files
+                        if call.tool_name == "edit" || call.tool_name == "multiedit" || call.tool_name == "multifileedit" || call.tool_name == "write" {
+                            let edited_paths: Vec<String> = if call.tool_name == "multifileedit" {
+                                call.parameters.get("files")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|f| f.get("file_path").and_then(|p| p.as_str()).map(String::from))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                call.parameters.get("path")
+                                    .or_else(|| call.parameters.get("file_path"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| vec![s.to_string()])
+                                    .unwrap_or_default()
+                            };
+                            if !edited_paths.is_empty() {
+                                let mut cache = read_cache.write().await;
+                                cache.retain(|(key, _)| {
+                                    let path_part = key.split(':').next().unwrap_or("");
+                                    !edited_paths.iter().any(|p| key.starts_with(&format!("{}:", p)) || key == p)
+                                });
                             }
                         }
 

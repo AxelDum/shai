@@ -4,7 +4,7 @@ use uuid::Uuid;
 use std::sync::Arc;
 
 use crate::tools::mcp::mcp_oauth::signin_oauth;
-use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, MultiEditTool, MultiFileEditTool, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
+use crate::tools::{create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, McpConfig, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool, WriteTool};
 use crate::config::agent::{AgentConfig, CompactionConfig, VerificationConfig};
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
@@ -82,10 +82,8 @@ impl AgentBuilder {
         vec![
             Box::new(BashTool::new()),
             Box::new(EditTool::new(fs_log.clone())),
-            Box::new(MultiEditTool::new(fs_log.clone())),
-            Box::new(MultiFileEditTool::new(fs_log.clone())),
             Box::new(FetchTool::new()),
-            Box::new(FindTool::new()),
+            Box::new(FindTool::new().with_exclude_patterns(CompactionConfig::default().find_exclude_patterns.clone())),
             Box::new(LsTool::new()),
             Box::new(ReadTool::new(fs_log.clone())),
             Box::new(TodoReadTool::new(todo_storage.clone())),
@@ -216,7 +214,7 @@ impl AgentBuilder {
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
             // Add all builtin tools
-            vec!["bash", "edit", "multiedit", "multifileedit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
+            vec!["bash", "edit", "fetch", "find", "ls", "read", "todo_read", "todo_write", "write"]
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()
@@ -227,14 +225,12 @@ impl AgentBuilder {
             if config.tools.builtin_excluded.contains(&tool_name.to_string()) {
                 continue;
             }
-            
+
             match tool_name {
                 "bash" => tools.push(Box::new(BashTool::new())),
                 "edit" => tools.push(Box::new(EditTool::new(fs_log.clone()))),
-                "multiedit" => tools.push(Box::new(MultiEditTool::new(fs_log.clone()))),
-                "multifileedit" => tools.push(Box::new(MultiFileEditTool::new(fs_log.clone()))),
                 "fetch" => tools.push(Box::new(FetchTool::new())),
-                "find" => tools.push(Box::new(FindTool::new())),
+                "find" => tools.push(Box::new(FindTool::new().with_exclude_patterns(config.compaction.find_exclude_patterns.clone()))),
                 "ls" => tools.push(Box::new(LsTool::new())),
                 "read" => tools.push(Box::new(ReadTool::new(fs_log.clone()))),
                 "todo_read" => tools.push(Box::new(TodoReadTool::new(todo_storage.clone()))),

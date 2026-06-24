@@ -261,8 +261,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn default_config(default_config_url: Option<String>) {
-    if ShaiConfig::load().is_ok() {
-        return;
+    match ShaiConfig::load() {
+        Ok(_) => return,
+        Err(e) => {
+            if let Ok(path) = ShaiConfig::config_path() {
+                if path.exists() {
+                    eprintln!("Warning: failed to parse config at {}: {}", path.display(), e);
+                    return;
+                }
+            }
+        }
     }
 
     let default_url = match default_config_url {
@@ -571,10 +579,11 @@ async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::er
                                 width = max_name_len
                             );
                         }
-                        Err(_) => {
-                            println!(
-                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error)\x1b[0m",
+                        Err(e) => {
+                            eprintln!(
+                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error: {})\x1b[0m",
                                 agent,
+                                e,
                                 width = max_name_len
                             );
                         }

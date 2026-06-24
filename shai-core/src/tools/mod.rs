@@ -21,7 +21,7 @@ pub use bash::BashTool;
 pub use fetch::FetchTool;
 pub use fs::{
     EditTool, FindTool, FsOperation, FsOperationLog, FsOperationSummary, FsOperationType, LsTool,
-    MultiEditTool, MultiFileEditTool, ReadTool, WriteTool,
+    ReadTool, WriteTool,
 };
 pub use mcp::{
     create_mcp_client, get_mcp_tools, HttpClient, McpClient, McpConfig, McpToolDescription,

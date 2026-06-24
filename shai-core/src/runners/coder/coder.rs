@@ -9,7 +9,7 @@ use crate::agent::brain::ThinkerDecision;
 use crate::agent::{AgentBuilder, AgentError, AgentCore, Brain, ThinkerContext};
 use crate::tools::types::{ContainsAnyTool, IntoToolBox};
 use shai_llm::tool::LlmToolCall;
-use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, MultiEditTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
+use crate::tools::{AnyTool, BashTool, EditTool, FetchTool, FindTool, LsTool, ReadTool, TodoReadTool, TodoWriteTool, WriteTool, TodoStorage, FsOperationLog};
 use crate::tools::skills::SkillTool;
 
 use super::prompt::{render_system_prompt_template, get_todo_read};
@@ -138,7 +138,6 @@ pub fn coder(llm: Arc<LlmClient>, model: String) -> AgentCore {
     
     let bash = Box::new(BashTool::new());
     let edit = Box::new(EditTool::new(fs_log.clone()));
-    let multiedit = Box::new(MultiEditTool::new(fs_log.clone()));
     let fetch = Box::new(FetchTool::new());
     let find = Box::new(FindTool::new());
     let ls = Box::new(LsTool::new());
@@ -146,7 +145,7 @@ pub fn coder(llm: Arc<LlmClient>, model: String) -> AgentCore {
     let todoread = Box::new(TodoReadTool::new(todo_storage.clone()));
     let todowrite = Box::new(TodoWriteTool::new(todo_storage.clone()));
     let write = Box::new(WriteTool::new(fs_log.clone()));
-    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, multiedit, fetch, find, ls, read, todoread, todowrite, write, Box::new(SkillTool::new())];
+    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, fetch, find, ls, read, todoread, todowrite, write, Box::new(SkillTool::new())];
 
     AgentBuilder::with_brain(Box::new(CoderBrain::new(llm.clone(), model)))
     .tools(toolbox)

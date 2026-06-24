@@ -31,7 +31,6 @@ async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {
     
     let bash = Box::new(crate::tools::BashTool::new());
     let edit = Box::new(crate::tools::EditTool::new(fs_log.clone()));
-    let multiedit = Box::new(crate::tools::MultiEditTool::new(fs_log.clone()));
     let fetch = Box::new(crate::tools::FetchTool::new());
     let find = Box::new(crate::tools::FindTool::new());
     let ls = Box::new(crate::tools::LsTool::new());
@@ -39,7 +38,7 @@ async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {
     let todoread = Box::new(crate::tools::TodoReadTool::new(todo_storage.clone()));
     let todowrite = Box::new(crate::tools::TodoWriteTool::new(todo_storage.clone()));
     let write = Box::new(crate::tools::WriteTool::new(fs_log.clone()));
-    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, multiedit, fetch, find, ls, read, todoread, todowrite, write];
+    let toolbox: Vec<Box<dyn AnyTool>> = vec![bash, edit, fetch, find, ls, read, todoread, todowrite, write];
     
     crate::agent::AgentBuilder::with_brain(Box::new(CoderBrain::new(llm_client, model)))
         .goal(goal)

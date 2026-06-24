@@ -25,6 +25,7 @@ pub struct AgentBuilder {
     pub verification_config: VerificationConfig,
     pub fs_operation_log: Arc<FsOperationLog>,
     pub working_dir: Option<String>,
+    pub todo_storage: Option<Arc<TodoStorage>>,
 }
 
 impl AgentBuilder {
@@ -54,9 +55,9 @@ impl AgentBuilder {
         // Create default toolbox (using ToolConfig from shai-cli)
         // For now, create basic tools - we can expand this later
         let fs_log = Arc::new(FsOperationLog::new());
-        let tools = Self::create_default_tools(fs_log.clone());
+        let (tools, todo_storage) = Self::create_default_tools(fs_log.clone());
 
-        Ok(Self::with_brain(brain).tools(tools))
+        Ok(Self::with_brain(brain).tools(tools).set_todo_storage(todo_storage))
     }
 
     /// Create AgentBuilder with a specific brain
@@ -72,14 +73,21 @@ impl AgentBuilder {
             verification_config: VerificationConfig::default(),
             fs_operation_log: Arc::new(FsOperationLog::new()),
             working_dir: None,
+            todo_storage: None,
         }
     }
 
+    /// Set the todo_storage
+    pub fn set_todo_storage(mut self, todo_storage: Arc<TodoStorage>) -> Self {
+        self.todo_storage = Some(todo_storage);
+        self
+    }
+
     /// Create default set of tools
-    fn create_default_tools(fs_log: Arc<FsOperationLog>) -> Vec<Box<dyn AnyTool>> {
+    fn create_default_tools(fs_log: Arc<FsOperationLog>) -> (Vec<Box<dyn AnyTool>>, Arc<TodoStorage>) {
         let todo_storage = Arc::new(TodoStorage::new());
 
-        vec![
+        let tools: Vec<Box<dyn AnyTool>> = vec![
             Box::new(BashTool::new()),
             Box::new(EditTool::new(fs_log.clone())),
             Box::new(MultiEditTool::new(fs_log.clone())),
@@ -91,7 +99,9 @@ impl AgentBuilder {
             Box::new(TodoReadTool::new(todo_storage.clone())),
             Box::new(TodoWriteTool::new(todo_storage.clone())),
             Box::new(WriteTool::new(fs_log)),
-        ]
+        ];
+
+        (tools, todo_storage)
     }
 }
 
@@ -144,6 +154,8 @@ impl AgentBuilder {
         }
 
 
+        let todo_storage = self.todo_storage.unwrap_or_else(|| Arc::new(TodoStorage::new()));
+
         AgentCore::new(
             self.session_id.clone(),
             self.brain,
@@ -154,6 +166,7 @@ impl AgentBuilder {
             self.verification_config,
             self.fs_operation_log,
             self.working_dir,
+            todo_storage,
         )
     }
 
@@ -175,7 +188,7 @@ impl AgentBuilder {
 
         // Create tools
         let fs_log = Arc::new(FsOperationLog::new());
-        let tools = Self::create_tools_from_config(&mut config, fs_log.clone()).await?;
+        let (tools, todo_storage) = Self::create_tools_from_config(&mut config, fs_log.clone()).await?;
         
         // Display available tools by category
         let mut tool_groups: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
@@ -203,11 +216,12 @@ impl AgentBuilder {
         builder.fs_operation_log = fs_log;
         Ok(builder
             .tools(tools)
+            .set_todo_storage(todo_storage)
             .id(&format!("agent-{}", config.name)))
     }
 
     /// Create tools from config
-    async fn create_tools_from_config(config: &mut AgentConfig, fs_log: Arc<FsOperationLog>) -> Result<Vec<Box<dyn AnyTool>>, AgentError> {
+    async fn create_tools_from_config(config: &mut AgentConfig, fs_log: Arc<FsOperationLog>) -> Result<(Vec<Box<dyn AnyTool>>, Arc<TodoStorage>), AgentError> {
         let mut tools: Vec<Box<dyn AnyTool>> = Vec::new();
 
         // Create shared storage for todo tools
@@ -319,7 +333,7 @@ impl AgentBuilder {
             config.save().map_err(|e| AgentError::ConfigurationError(format!("Failed to save agent config: {}", e)))?;
         }
 
-        Ok(tools)
+        Ok((tools, todo_storage))
     }
 
     /// Handle OAuth flow for MCP connections if needed

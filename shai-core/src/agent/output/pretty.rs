@@ -114,6 +114,10 @@ impl PrettyFormatter {
                 // Don't display token usage in the main output - it's handled by /tokens command
                 None
             }
+            AgentEvent::TodoUpdated { .. } => {
+                // Todo updates are displayed in the sidebar, not in the main output
+                None
+            }
         }
         .map(|s| format!("\n{}", s))
     }

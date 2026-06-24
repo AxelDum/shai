@@ -105,7 +105,7 @@ mod integration_tests {
                     old_string: "Hello, World!".to_string(),
                     new_string: "Hello, Universe!".to_string(),
                     replace_all: false,
-                },
+                    line_hash: None,                },
                 None,
             )
             .await;
@@ -121,12 +121,12 @@ mod integration_tests {
                             old_string: "Universe".to_string(),
                             new_string: "Galaxy".to_string(),
                             replace_all: false,
-                        },
+                    line_hash: None,                        },
                         EditOperation {
                             old_string: "test file".to_string(),
                             new_string: "example document".to_string(),
                             replace_all: false,
-                        },
+                    line_hash: None,                        },
                     ],
                 },
                 None,
@@ -202,7 +202,7 @@ mod integration_tests {
                     old_string: "Content".to_string(),
                     new_string: "Modified content".to_string(),
                     replace_all: false,
-                },
+                    line_hash: None,                },
                 None,
             )
             .await;
@@ -220,7 +220,7 @@ mod integration_tests {
                         old_string: "Content".to_string(),
                         new_string: "Modified content".to_string(),
                         replace_all: false,
-                    }],
+                    line_hash: None,                    }],
                 },
                 None,
             )
@@ -250,7 +250,7 @@ mod integration_tests {
                     old_string: "Content".to_string(),
                     new_string: "Modified content".to_string(),
                     replace_all: false,
-                },
+                    line_hash: None,                },
                 None,
             )
             .await;
@@ -277,7 +277,7 @@ mod integration_tests {
                         old_string: "Content".to_string(),
                         new_string: "Modified content".to_string(),
                         replace_all: false,
-                    }],
+                    line_hash: None,                    }],
                 },
                 None,
             )
@@ -367,7 +367,7 @@ mod integration_tests {
                     old_string: r#""version": "1.0""#.to_string(),
                     new_string: r#""version": "2.0""#.to_string(),
                     replace_all: false,
-                },
+                    line_hash: None,                },
                 None,
             )
             .await;
@@ -395,7 +395,7 @@ mod integration_tests {
                     old_string: "Hello, Python!".to_string(),
                     new_string: "Hello, World from Python!".to_string(),
                     replace_all: false,
-                },
+                    line_hash: None,                },
                 None,
             )
             .await;

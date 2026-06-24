@@ -31,6 +31,7 @@ use tui::App;
 #[cfg(unix)]
 mod fc;
 mod headless;
+mod import;
 #[cfg(unix)]
 mod shell;
 
@@ -155,6 +156,12 @@ enum Commands {
         #[arg(long)]
         max_sessions: Option<usize>,
     },
+    /// Import configuration from .claude or .cursor into AGENTS.md
+    Import {
+        /// Overwrite existing AGENTS.md instead of appending
+        #[arg(long)]
+        overwrite: bool,
+    },
 }
 
 #[tokio::main]
@@ -199,6 +206,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_sessions,
         }) => {
             handle_serve(host, port, agent, ephemeral, max_sessions).await?;
+        }
+        Some(Commands::Import { overwrite }) => {
+            handle_import(overwrite)?;
         }
         None => {
             // Check for stdin input or trailing arguments
@@ -520,6 +530,24 @@ pub async fn handle_postcmd(
     }
 
     Ok(())
+}
+
+fn handle_import(overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let base = std::env::current_dir()?;
+    match import::import_to_agents_md(&base, overwrite) {
+        Ok((path, count)) => {
+            println!(
+                "\x1b[32m✓\x1b[0m Imported {} config(s) into {}",
+                count,
+                path.display()
+            );
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("\x1b[31m✗\x1b[0m {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 async fn handle_serve(

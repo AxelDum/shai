@@ -178,7 +178,10 @@ impl PrettyFormatter {
 
     /// Format tool started
     pub fn format_tool_started(&self, call: &ToolCall) -> String {
-        let tool_name = Self::capitalize_first(&call.tool_name);
+        let tool_name = match call.tool_name.as_str() {
+            "ls" => "List".to_string(),
+            _ => Self::capitalize_first(&call.tool_name),
+        };
         let context = Self::extract_primary_param(&call.parameters, &call.tool_name);
 
         let mut output = String::new();
@@ -195,7 +198,10 @@ impl PrettyFormatter {
 
     /// Format tool started
     pub fn format_tool_running(&self, call: &ToolCall) -> String {
-        let tool_name = Self::capitalize_first(&call.tool_name);
+        let tool_name = match call.tool_name.as_str() {
+            "ls" => "List".to_string(),
+            _ => Self::capitalize_first(&call.tool_name),
+        };
         let context = Self::extract_primary_param(&call.parameters, &call.tool_name);
 
         let mut output = String::new();
@@ -229,18 +235,20 @@ impl PrettyFormatter {
             "\x1b[31m"
         };
 
-        // For read tool, show compact format with offset/limit instead of full content
-        if call.tool_name == "read" {
+        // Compact format for read/find/ls tools
+        if matches!(call.tool_name.as_str(), "read" | "find" | "ls") {
             let mut parts = Vec::new();
-            if let Some(files) = call.parameters.get("files").and_then(|f| f.as_array()) {
-                if let Some(first_file) = files.first().and_then(|f| f.as_object()) {
-                    if let Some(offset) = first_file.get("offset").and_then(|v| v.as_u64()) {
-                        if offset > 1 {
-                            parts.push(format!("offset={}", offset));
+            if call.tool_name == "read" {
+                if let Some(files) = call.parameters.get("files").and_then(|f| f.as_array()) {
+                    if let Some(first_file) = files.first().and_then(|f| f.as_object()) {
+                        if let Some(offset) = first_file.get("offset").and_then(|v| v.as_u64()) {
+                            if offset > 1 {
+                                parts.push(format!("offset={}", offset));
+                            }
                         }
-                    }
-                    if let Some(limit) = first_file.get("limit").and_then(|v| v.as_u64()) {
-                        parts.push(format!("limit={}", limit));
+                        if let Some(limit) = first_file.get("limit").and_then(|v| v.as_u64()) {
+                            parts.push(format!("limit={}", limit));
+                        }
                     }
                 }
             }
@@ -253,12 +261,12 @@ impl PrettyFormatter {
             let mut output = String::new();
             if let Some((_, ctx)) = &context {
                 output.push_str(&format!(
-                    "{}←\x1b[0m \x1b[1m{}\x1b[0m {}{}\n",
+                    "{}→\x1b[0m \x1b[1m{}\x1b[0m {}{}\n",
                     color, tool_name, ctx, params_str
                 ));
             } else {
                 output.push_str(&format!(
-                    "{}←\x1b[0m \x1b[1m{}\x1b[0m{}\n",
+                    "{}→\x1b[0m \x1b[1m{}\x1b[0m{}\n",
                     color, tool_name, params_str
                 ));
             }
@@ -282,11 +290,11 @@ impl PrettyFormatter {
         let mut output = String::new();
         if let Some((_, ctx)) = context {
             output.push_str(&format!(
-                "{}←\x1b[0m \x1b[1m{}\x1b[0m {}\n",
+                "{}→\x1b[0m \x1b[1m{}\x1b[0m {}\n",
                 color, tool_name, ctx
             ));
         } else {
-            output.push_str(&format!("{}←\x1b[0m \x1b[1m{}\x1b[0m\n", color, tool_name));
+            output.push_str(&format!("{}→\x1b[0m \x1b[1m{}\x1b[0m\n", color, tool_name));
         }
 
         match result {
@@ -296,17 +304,17 @@ impl PrettyFormatter {
             } => {
                 if tool_output.trim().is_empty() {
                     // Use ANSI codes: bold "Completed"
-                    output.push_str("  ← \x1b[1mCompleted\x1b[0m");
+                    output.push_str("  → \x1b[1mCompleted\x1b[0m");
                 } else {
                     let lines = tool_output.lines().count();
                     let chars = tool_output.len();
 
                     // Use ANSI codes: bold numbers, normal text
                     if lines == 1 {
-                        output.push_str(&format!("  ← \x1b[1m{}\x1b[0m chars", chars));
+                        output.push_str(&format!("  → \x1b[1m{}\x1b[0m chars", chars));
                     } else {
                         output.push_str(&format!(
-                            "  ← \x1b[1m{}\x1b[0m lines, \x1b[1m{}\x1b[0m chars",
+                            "  → \x1b[1m{}\x1b[0m lines, \x1b[1m{}\x1b[0m chars",
                             lines, chars
                         ));
                     }
@@ -314,10 +322,9 @@ impl PrettyFormatter {
                     // Show first N lines for user display only for specific tools
                     if matches!(
                         call.tool_name.as_str(),
-                        "ls" | "bash"
+                        "bash"
                             | "edit"
                             | "multiedit"
-                            | "find"
                             | "write"
                             | "todo_read"
                             | "todo_write"
@@ -387,12 +394,12 @@ impl PrettyFormatter {
             }
             ToolResult::Error { error, .. } => {
                 // Use ANSI codes: entire line dim red
-                output.push_str(&format!("  ← \x1b[2;31mError: {}\x1b[0m", error));
+                output.push_str(&format!("  → \x1b[2;31mError: {}\x1b[0m", error));
             }
             ToolResult::Denied => {
                 // Use ANSI codes: entire line dim red
                 output.push_str(
-                    "  ← \x1b[2;31mDenied: The tool call was rejected by the user\x1b[0m",
+                    "  → \x1b[2;31mDenied: The tool call was rejected by the user\x1b[0m",
                 );
             }
         }
@@ -408,16 +415,25 @@ impl PrettyFormatter {
         if let Some(obj) = args.as_object() {
             // Common parameter names to look for, in order of preference
             let param_names = match tool_name {
-                "read" | "write" | "edit" | "multiedit" => vec!["file_path", "path"],
-                "ls" | "glob" => vec!["path", "pattern"],
+                "read" | "write" | "edit" | "multiedit" => vec!["path"],
+                "ls" | "glob" => vec!["path", "directory", "pattern"],
                 "find" | "grep" => vec!["pattern", "path"],
                 "bash" => vec!["command"],
-                _ => vec!["path", "file_path", "pattern", "command", "query", "input"],
+                _ => vec!["path", "pattern", "command", "query", "input"],
             };
 
             for param in param_names {
                 if let Some(value) = obj.get(param).and_then(|v| v.as_str()) {
                     return Some((param.to_string(), Self::format_param_value(value)));
+                }
+            }
+
+            // If no top-level match, check inside the "files" array (read/write/edit tools)
+            if let Some(files) = obj.get("files").and_then(|f| f.as_array()) {
+                if let Some(first_file) = files.first().and_then(|f| f.as_object()) {
+                    if let Some(value) = first_file.get("path").and_then(|v| v.as_str()) {
+                        return Some(("path".to_string(), Self::format_param_value(value)));
+                    }
                 }
             }
 

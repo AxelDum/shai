@@ -8,7 +8,7 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 use chrono::Utc;
 use cli_clipboard::ClipboardProvider;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, DisableMouseCapture, EnableMouseCapture, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{self, disable_raw_mode};
 use futures::{future::FutureExt, StreamExt};
@@ -380,6 +380,11 @@ impl App<'_> {
         }
     }
 
+    /// Display a transient notification in the status bar.
+    pub fn notify(&mut self, msg: &str, duration: std::time::Duration) {
+        self.status_bar.set_notification(msg, duration);
+    }
+
     pub async fn run(
         &mut self,
         agent_name: Option<String>,
@@ -387,11 +392,11 @@ impl App<'_> {
     ) -> io::Result<()> {
         let x = self.try_run(agent_name, restore_session_id).await;
 
-        // Restore keyboard protocol
+        // Disable mouse capture and restore keyboard protocol
         let _ = execute!(
             std::io::stdout(),
+            crossterm::event::DisableMouseCapture,
             crossterm::event::PopKeyboardEnhancementFlags,
-            DisableMouseCapture,
         );
         std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
@@ -429,8 +434,8 @@ impl App<'_> {
             viewport: Viewport::Fullscreen,
         }));
 
-        // Enable mouse capture so we receive scroll events
-        execute!(io::stdout(), EnableMouseCapture).ok();
+        // Enable mouse capture for scroll wheel support
+        execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
 
         // Clear the alternate screen so previous shell output doesn't show through
         if let Some(ref mut terminal) = self.terminal {
@@ -498,16 +503,39 @@ impl App<'_> {
                 }
             }
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                // Any key resets scroll to bottom
+                // Handle scroll keys without resetting scroll position
+                let ctrl = key_event
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL);
+                match key_event.code {
+                    KeyCode::PageUp => {
+                        self.history.scroll_up(3);
+                        return Ok(());
+                    }
+                    KeyCode::PageDown => {
+                        self.history.scroll_down(3);
+                        return Ok(());
+                    }
+                    KeyCode::Up if ctrl => {
+                        self.history.scroll_up(3);
+                        return Ok(());
+                    }
+                    KeyCode::Down if ctrl => {
+                        self.history.scroll_down(3);
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+                // Any other key resets scroll to bottom
                 self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
             }
             Event::Mouse(mouse_event) => {
                 match mouse_event.kind {
-                    crossterm::event::MouseEventKind::ScrollUp => {
+                    MouseEventKind::ScrollUp => {
                         self.history.scroll_up(3);
                     }
-                    crossterm::event::MouseEventKind::ScrollDown => {
+                    MouseEventKind::ScrollDown => {
                         self.history.scroll_down(3);
                     }
                     _ => {}
@@ -565,8 +593,8 @@ impl App<'_> {
         {
             if let Some(ref agent) = self.agent {
                 let _ = agent.controller.regenerate().await;
-                self.input
-                    .alert_msg("Regenerating last response...", Duration::from_secs(2));
+                self
+                    .notify("Regenerating last response...", Duration::from_secs(2));
             }
             return Ok(());
         }
@@ -580,12 +608,12 @@ impl App<'_> {
             if !self.last_assistant_response.is_empty() {
                 if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
                     let _ = ctx.set_contents(self.last_assistant_response.clone());
-                    self.input
-                        .alert_msg("Copied last response to clipboard", Duration::from_secs(2));
+                    self
+                        .notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {
-                self.input
-                    .alert_msg("No assistant response to copy", Duration::from_secs(2));
+                self
+                    .notify("No assistant response to copy", Duration::from_secs(2));
             }
             return Ok(());
         }
@@ -659,7 +687,7 @@ impl App<'_> {
                     if let Some(ref agent) = self.agent {
                         let _ = agent.controller.set_active_prompts(selected.clone()).await;
                         let _ = shai_core::tools::prompts::save_active_prompts(&selected);
-                        self.input.alert_msg(
+                        self.notify(
                             "System prompts updated",
                             std::time::Duration::from_secs(2),
                         );
@@ -701,7 +729,7 @@ impl App<'_> {
                         .response_permission_request(request_id, choice)
                         .await
                     {
-                        self.input.alert_msg(
+                        self.notify(
                             "channel with agent closed. Please restart the app",
                             Duration::from_secs(3),
                         );
@@ -772,14 +800,14 @@ impl App<'_> {
             UserAction::CancelTask => {
                 if let Some(ref agent) = self.agent {
                     let _ = agent.controller.stop_current_task().await;
-                    self.input
-                        .alert_msg("Task cancelled", Duration::from_secs(1));
+                    self
+                        .notify("Task cancelled", Duration::from_secs(1));
                 }
             }
             UserAction::UserInput { input } => {
                 if let Some(ref agent) = self.agent {
                     if let Err(e) = agent.controller.send_user_input(input.clone()).await {
-                        self.input.alert_msg(
+                        self.notify(
                             "channel with agent closed. Please restart the app",
                             Duration::from_secs(3),
                         );

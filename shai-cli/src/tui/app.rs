@@ -47,6 +47,7 @@ use super::perm::PermissionModalAction;
 use super::statusbar::StatusBar;
 use super::theme::Theme;
 use super::viewer::AlternateScreenViewer;
+use super::session_picker::{SessionPicker, SessionPickerAction};
 use crate::tui::input::InputArea;
 use crate::tui::perm::PermissionWidget;
 use crate::tui::perm_alt_screen::AlternateScreenPermissionModal;
@@ -619,6 +620,23 @@ impl App<'_> {
                 let mut viewer =
                     AlternateScreenViewer::new(output, self.last_tool_file_path.clone());
                 let _ = viewer.run().await;
+            }
+            return Ok(());
+        }
+
+        // Handle Ctrl+O — Open session picker
+        if matches!(key_event.code, KeyCode::Char('o'))
+            && key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            let sessions = shai_core::session::SessionPersist::list_sessions()
+                .unwrap_or_default();
+            let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
+            if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
+                if let Some(session) = sessions.get(idx) {
+                    self.restore_session(&session.session_id).await?;
+                }
             }
             return Ok(());
         }

@@ -2,6 +2,7 @@ use ansi_to_tui::IntoText;
 use shai_llm::ToolCallMethod;
 use std::{collections::HashMap, io, time::Duration};
 
+use super::session_picker::{SessionPicker, SessionPickerAction};
 use super::theme::Theme;
 use crate::tui::App;
 use ratatui::widgets::Widget;
@@ -271,31 +272,13 @@ impl App<'_> {
                                     .alert_msg("Invalid session number", Duration::from_secs(2));
                             }
                         } else {
-                            // List all sessions
-                            let mut msg = String::from("Saved sessions:\n");
-                            for (i, s) in sessions.iter().enumerate() {
-                                let preview = s.trace.first()
-                                    .map(|m| {
-                                        match m {
-                                            openai_dive::v1::resources::chat::ChatMessage::User { content, .. } => {
-                                                match content {
-                                                    openai_dive::v1::resources::chat::ChatMessageContent::Text(t) => t.chars().take(50).collect::<String>(),
-                                                    _ => "(multimedia)".to_string(),
-                                                }
-                                            }
-                                            _ => "(no user message)".to_string(),
-                                        }
-                                    })
-                                    .unwrap_or_else(|| "(empty)".to_string());
-                                msg.push_str(&format!(
-                                    "  {} - {} ... ({})\n",
-                                    i + 1,
-                                    &s.session_id[..8],
-                                    preview
-                                ));
+                            // Open the session picker
+                            let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
+                            if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
+                                if let Some(session) = sessions.get(idx) {
+                                    self.restore_session(&session.session_id).await?;
+                                }
                             }
-                            msg.push_str("\nUse /restore <number> to restore a session");
-                            self.input.alert_msg(&msg, Duration::from_secs(10));
                         }
                     }
                     Ok(_) => {

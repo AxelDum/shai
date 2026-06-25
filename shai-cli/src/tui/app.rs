@@ -8,7 +8,7 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 use chrono::Utc;
 use cli_clipboard::ClipboardProvider;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, DisableMouseCapture, EnableMouseCapture, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{self, disable_raw_mode};
 use futures::{future::FutureExt, StreamExt};
@@ -391,6 +391,7 @@ impl App<'_> {
         let _ = execute!(
             std::io::stdout(),
             crossterm::event::PopKeyboardEnhancementFlags,
+            DisableMouseCapture,
         );
         std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
@@ -427,6 +428,9 @@ impl App<'_> {
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
             viewport: Viewport::Fullscreen,
         }));
+
+        // Enable mouse capture so we receive scroll events
+        execute!(io::stdout(), EnableMouseCapture).ok();
 
         // Clear the alternate screen so previous shell output doesn't show through
         if let Some(ref mut terminal) = self.terminal {
@@ -497,6 +501,17 @@ impl App<'_> {
                 // Any key resets scroll to bottom
                 self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
+            }
+            Event::Mouse(mouse_event) => {
+                match mouse_event.kind {
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        self.history.scroll_up(3);
+                    }
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        self.history.scroll_down(3);
+                    }
+                    _ => {}
+                }
             }
             _ => {}
         }

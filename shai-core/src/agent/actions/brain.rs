@@ -19,6 +19,7 @@ impl AgentCore {
         let max_trace_chars = self.compaction_config.max_trace_chars;
         let temperature = *self.temperature.read().await;
         let is_plan_mode = self.permissions.read().await.is_plan_mode();
+        let active_prompts = self.permissions.read().await.active_prompts().to_vec();
         let tool_call_count = *self.tool_call_count.read().await;
         let max_tool_calls = self.compaction_config.max_tool_calls_per_turn;
         let soft_tool_calls = max_tool_calls.map(|m| m / 2);
@@ -29,6 +30,7 @@ impl AgentCore {
             max_trace_chars,
             temperature,
             is_plan_mode,
+            active_prompts,
             tool_call_metadata: self.tool_call_metadata.clone(),
             tool_call_count,
             max_tool_calls,

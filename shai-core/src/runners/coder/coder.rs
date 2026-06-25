@@ -92,6 +92,17 @@ impl Brain for CoderBrain {
             system_prompt_full += PLAN_MODE_PROMPT;
         }
 
+        // Inject active system prompts
+        if !context.active_prompts.is_empty() {
+            let loaded = crate::tools::prompts::load_active_prompts(&context.active_prompts);
+            for (name, body) in loaded {
+                system_prompt_full += "\n\n--- Active system prompt: ";
+                system_prompt_full += &name;
+                system_prompt_full += " ---\n";
+                system_prompt_full += &body;
+            }
+        }
+
         // Inject dynamic budget awareness hints
         let tool_calls = context.tool_call_count;
         if let Some(soft_budget) = context.soft_tool_calls {

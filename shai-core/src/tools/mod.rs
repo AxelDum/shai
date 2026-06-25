@@ -4,6 +4,7 @@ pub mod fs;
 pub mod highlight;
 pub mod mcp;
 pub mod memory;
+pub mod prompts;
 pub mod skills;
 pub mod todo;
 pub mod types;

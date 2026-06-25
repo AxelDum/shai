@@ -8,10 +8,7 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 use chrono::Utc;
 use cli_clipboard::ClipboardProvider;
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    MouseEventKind,
-};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{self, disable_raw_mode};
 use futures::{future::FutureExt, StreamExt};
@@ -153,9 +150,15 @@ impl App<'_> {
 
         self.agent = Some(AppRunningAgent {
             handle,
-            controller,
+            controller: controller.clone(),
             events,
         });
+
+        // Restore saved active prompts
+        let saved_prompts = shai_core::tools::prompts::load_active_prompts_from_disk();
+        if !saved_prompts.is_empty() {
+            let _ = controller.set_active_prompts(saved_prompts).await;
+        }
 
         // Update status bar with agent metadata
         self.status_bar.set_model(&self.agent_model);
@@ -388,7 +391,6 @@ impl App<'_> {
         let _ = execute!(
             std::io::stdout(),
             crossterm::event::PopKeyboardEnhancementFlags,
-            DisableMouseCapture,
         );
         std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
@@ -425,9 +427,6 @@ impl App<'_> {
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
             viewport: Viewport::Fullscreen,
         }));
-
-        // Enable mouse capture so we receive scroll events
-        execute!(io::stdout(), EnableMouseCapture).ok();
 
         // Clear the alternate screen so previous shell output doesn't show through
         if let Some(ref mut terminal) = self.terminal {
@@ -492,17 +491,6 @@ impl App<'_> {
             Event::Resize(..) => {
                 if let Some(ref mut terminal) = self.terminal {
                     terminal.clear()?;
-                }
-            }
-            Event::Mouse(mouse_event) => {
-                match mouse_event.kind {
-                    MouseEventKind::ScrollUp => {
-                        self.history.scroll_up(3);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        self.history.scroll_down(3);
-                    }
-                    _ => {}
                 }
             }
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -641,6 +629,32 @@ impl App<'_> {
             return Ok(());
         }
 
+        // Handle Ctrl+P — Open prompt picker
+        if matches!(key_event.code, KeyCode::Char('p'))
+            && key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            let prompts = shai_core::tools::prompts::discover_prompts();
+            let active = shai_core::tools::prompts::load_active_prompts_from_disk();
+            let mut picker =
+                crate::tui::prompt_picker::PromptPicker::new(prompts, &active, self.theme.palette());
+            match picker.run().await {
+                Ok(crate::tui::prompt_picker::PromptPickerAction::Selected(selected)) => {
+                    if let Some(ref agent) = self.agent {
+                        let _ = agent.controller.set_active_prompts(selected.clone()).await;
+                        let _ = shai_core::tools::prompts::save_active_prompts(&selected);
+                        self.input.alert_msg(
+                            "System prompts updated",
+                            std::time::Duration::from_secs(2),
+                        );
+                    }
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         match &mut self.state {
             AppModalState::InputShown => {
                 let action = self.input.handle_event(key_event).await;
@@ -775,9 +789,10 @@ impl App<'_> {
 
         if let Some(ref mut terminal) = self.terminal {
             terminal.draw(|frame| {
-                let [_, history_area, tools_area, modal_area, statusbar_area] = Layout::vertical([
+                let [_, history_area, _, tools_area, modal_area, statusbar_area] = Layout::vertical([
                     Constraint::Length(1),                    // padding
                     Constraint::Fill(1),                      // conversation history
+                    Constraint::Length(1),                    // bottom margin
                     Constraint::Length(running_tools_height), // running tools
                     Constraint::Length(modal_height),         // input or modal
                     Constraint::Length(1),                    // status bar

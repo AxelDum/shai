@@ -59,6 +59,8 @@ pub struct StatusBarInfo {
 pub struct StatusBar {
     info: StatusBarInfo,
     theme: Theme,
+    notification: Option<String>,
+    notification_until: Option<std::time::Instant>,
 }
 
 impl StatusBar {
@@ -74,6 +76,8 @@ impl StatusBar {
                 agent_mode: String::new(),
             },
             theme,
+            notification: None,
+            notification_until: None,
         }
     }
 
@@ -104,6 +108,11 @@ impl StatusBar {
 
     pub fn set_agent_mode(&mut self, mode: &str) {
         self.info.agent_mode = mode.to_string();
+    }
+
+    pub fn set_notification(&mut self, msg: &str, duration: std::time::Duration) {
+        self.notification = Some(msg.to_string());
+        self.notification_until = Some(std::time::Instant::now() + duration);
     }
 
     pub fn draw(&self, f: &mut Frame, area: Rect) {
@@ -143,6 +152,21 @@ impl StatusBar {
             spans.push(Span::styled(
                 format!(" {} ", self.info.agent_mode),
                 Style::default().fg(Color::Black).bg(Color::Green),
+            ));
+        }
+
+        // Notification (shown after agent mode)
+        let mut notification_str = String::new();
+        if let (Some(msg), Some(until)) = (&self.notification, self.notification_until) {
+            if std::time::Instant::now() < until {
+                notification_str = format!(" {} ", msg);
+            }
+        }
+        if !notification_str.is_empty() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                notification_str,
+                Style::default().fg(Color::Black).bg(Color::Yellow),
             ));
         }
 

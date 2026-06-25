@@ -263,7 +263,7 @@ impl InputArea<'_> {
         if current_text.starts_with('/') && !current_text.contains(' ') {
             let prefix = current_text.trim();
             let all_commands = [
-                "/exit", "/tc", "/tokens", "/theme", "/restore", "/latest", "/skills", "/regenerate",
+                "/exit", "/tc", "/temp", "/tokens", "/theme", "/restore", "/latest", "/skills", "/regenerate",
             ];
             let filtered: Vec<String> = all_commands
                 .iter()

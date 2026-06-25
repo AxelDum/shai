@@ -21,6 +21,8 @@ pub struct ConversationHistory {
     lines: VecDeque<ConversationLine>,
     /// Scroll offset from the bottom (0 = latest)
     scroll_offset: usize,
+    /// Last known visible height (updated in draw)
+    visible_height: usize,
 }
 
 impl ConversationHistory {
@@ -28,6 +30,7 @@ impl ConversationHistory {
         Self {
             lines: VecDeque::with_capacity(MAX_SCROLLBACK_LINES),
             scroll_offset: 0,
+            visible_height: 0,
         }
     }
 
@@ -45,7 +48,7 @@ impl ConversationHistory {
 
     /// Scroll up by `n` lines
     pub fn scroll_up(&mut self, n: usize) {
-        let max_scroll = self.lines.len().saturating_sub(1);
+        let max_scroll = self.lines.len().saturating_sub(self.visible_height.max(1));
         self.scroll_offset = (self.scroll_offset + n).min(max_scroll);
     }
 
@@ -71,44 +74,37 @@ impl ConversationHistory {
     }
 
     /// Render the conversation history into the given area
-    pub fn draw(&self, f: &mut Frame, area: Rect) {
+    pub fn draw(&mut self, f: &mut Frame, area: Rect) {
         if self.lines.is_empty() {
             return;
         }
 
         let visible_height = area.height as usize;
+        self.visible_height = visible_height;
         if visible_height == 0 {
             return;
         }
 
         let total_lines = self.lines.len();
 
-        // Build the combined text — newest lines are at the bottom.
-        // We render all lines and use Paragraph::scroll to shift the viewport
-        // up by scroll_offset lines from the bottom.
+        // Calculate which logical lines to display.
+        // scroll_offset = 0 means showing the latest lines (bottom).
+        let end = total_lines.saturating_sub(self.scroll_offset);
+        let start = end.saturating_sub(visible_height);
+
         let combined: String = self
             .lines
-            .iter()
+            .range(start..end)
             .map(|l| l.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
 
-        // Calculate how many lines to skip from the top.
-        // scroll_offset = 0 means showing the latest lines (bottom).
-        // We need to skip lines from the top so the viewport shows the right window.
-        let skip_from_top = total_lines.saturating_sub(self.scroll_offset + visible_height);
-
         if let Ok(text) = combined.into_text() {
-            let paragraph = Paragraph::new(text)
-                .wrap(Wrap { trim: false })
-                .scroll((skip_from_top as u16, 0));
+            let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
             f.render_widget(paragraph, area);
         } else {
-            let paragraph = Paragraph::new(combined)
-                .wrap(Wrap { trim: false })
-                .scroll((skip_from_top as u16, 0));
+            let paragraph = Paragraph::new(combined).wrap(Wrap { trim: false });
             f.render_widget(paragraph, area);
         }
     }
 }
-

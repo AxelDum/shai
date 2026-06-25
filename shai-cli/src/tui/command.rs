@@ -17,7 +17,7 @@ impl App<'_> {
             (
                 (
                     "/tc".to_string(),
-                    "set the tool call method: [fc | fc2 | so]".to_string(),
+                    "set the tool call method: [auto | fc | fc2 | so]".to_string(),
                 ),
                 vec!["method".to_string()],
             ),
@@ -88,7 +88,7 @@ impl App<'_> {
                                 .set_method(Some(ToolCallMethod::Auto))
                                 .await
                             {
-                                self.input.alert_msg(
+                                self.notify(
                                     "llm will now try all method for tool calls",
                                     Duration::from_secs(3),
                                 );
@@ -101,7 +101,7 @@ impl App<'_> {
                                 .set_method(Some(ToolCallMethod::FunctionCall))
                                 .await
                             {
-                                self.input.alert_msg(
+                                self.notify(
                                     "llm will now use function calling api for tool calls",
                                     Duration::from_secs(3),
                                 );
@@ -114,7 +114,7 @@ impl App<'_> {
                                 .set_method(Some(ToolCallMethod::FunctionCallRequired))
                                 .await
                             {
-                                self.input.alert_msg("llm will now use function calling in required mode for tool calls", Duration::from_secs(3));
+                                self.notify("llm will now use function calling in required mode for tool calls", Duration::from_secs(3));
                                 self.input.set_tool_call_method(method);
                             }
                         }
@@ -124,7 +124,7 @@ impl App<'_> {
                                 .set_method(Some(ToolCallMethod::StructuredOutput))
                                 .await
                             {
-                                self.input.alert_msg(
+                                self.notify(
                                     "llm will now use structured output for tool calls",
                                     Duration::from_secs(3),
                                 );
@@ -138,8 +138,8 @@ impl App<'_> {
             "/regenerate" => {
                 if let Some(ref agent) = self.agent {
                     let _ = agent.controller.regenerate().await;
-                    self.input
-                        .alert_msg("Regenerating last response...", Duration::from_secs(2));
+                    self
+                        .notify("Regenerating last response...", Duration::from_secs(2));
                 }
             }
             "/temp" => {
@@ -148,26 +148,26 @@ impl App<'_> {
                         Some(temp_str) => match temp_str.parse::<f32>() {
                             Ok(temp) => match agent.controller.set_temperature(temp).await {
                                 Ok(temp) => {
-                                    self.input.alert_msg(
+                                    self.notify(
                                         &format!("Temperature set to {:.1}", temp),
                                         Duration::from_secs(2),
                                     );
                                 }
                                 Err(e) => {
-                                    self.input.alert_msg(
+                                    self.notify(
                                         &format!("Failed to set temperature: {}", e),
                                         Duration::from_secs(3),
                                     );
                                 }
                             },
                             Err(_) => {
-                                self.input
-                                    .alert_msg("Usage: /temp <float>", Duration::from_secs(3));
+                                self
+                                    .notify("Usage: /temp <float>", Duration::from_secs(3));
                             }
                         },
                         None => {
-                            self.input
-                                .alert_msg("Usage: /temp <float>", Duration::from_secs(3));
+                            self
+                                .notify("Usage: /temp <float>", Duration::from_secs(3));
                         }
                     }
                 }
@@ -180,22 +180,22 @@ impl App<'_> {
                     self.total_cached_tokens,
                     self.total_input_tokens + self.total_output_tokens
                 );
-                self.input.alert_msg(&msg, Duration::from_secs(5));
+                self.notify(&msg, Duration::from_secs(5));
             }
             "/theme" => match args.into_iter().next() {
                 Some("dark") => {
                     self.theme = Theme::Dark;
                     let new_palette = self.theme.palette();
                     self.input.set_palette(new_palette);
-                    self.input
-                        .alert_msg("Theme set to dark", Duration::from_secs(2));
+                    self
+                        .notify("Theme set to dark", Duration::from_secs(2));
                 }
                 Some("light") => {
                     self.theme = Theme::Light;
                     let new_palette = self.theme.palette();
                     self.input.set_palette(new_palette);
-                    self.input
-                        .alert_msg("Theme set to light", Duration::from_secs(2));
+                    self
+                        .notify("Theme set to light", Duration::from_secs(2));
                 }
                 Some("toggle") => {
                     self.theme.toggle();
@@ -205,14 +205,14 @@ impl App<'_> {
                         Theme::Dark => "dark",
                         Theme::Light => "light",
                     };
-                    self.input.alert_msg(
+                    self.notify(
                         &format!("Theme toggled to {}", theme_name),
                         Duration::from_secs(2),
                     );
                 }
                 _ => {
-                    self.input
-                        .alert_msg("Usage: /theme [dark|light|toggle]", Duration::from_secs(3));
+                    self
+                        .notify("Usage: /theme [dark|light|toggle]", Duration::from_secs(3));
                 }
             },
             "/restore" => {
@@ -237,7 +237,7 @@ impl App<'_> {
                                 });
 
                             if let Some(session) = selected {
-                                self.input.alert_msg(
+                                self.notify(
                                     &format!("Restoring session {}...", &session.session_id[..8]),
                                     Duration::from_secs(2),
                                 );
@@ -263,13 +263,13 @@ impl App<'_> {
                                 self.session_id = session.session_id.clone();
                                 self.render_restored_trace(&session.trace);
 
-                                self.input.alert_msg(
+                                self.notify(
                                     &format!("Session {} restored", &session.session_id[..8]),
                                     Duration::from_secs(2),
                                 );
                             } else {
-                                self.input
-                                    .alert_msg("Invalid session number", Duration::from_secs(2));
+                                self
+                                    .notify("Invalid session number", Duration::from_secs(2));
                             }
                         } else {
                             // Open the session picker
@@ -282,11 +282,11 @@ impl App<'_> {
                         }
                     }
                     Ok(_) => {
-                        self.input
-                            .alert_msg("No saved sessions found", Duration::from_secs(2));
+                        self
+                            .notify("No saved sessions found", Duration::from_secs(2));
                     }
                     Err(e) => {
-                        self.input.alert_msg(
+                        self.notify(
                             &format!("Failed to list sessions: {}", e),
                             Duration::from_secs(3),
                         );
@@ -297,7 +297,7 @@ impl App<'_> {
                 match shai_core::session::SessionPersist::list_sessions() {
                     Ok(sessions) if !sessions.is_empty() => {
                         let session = &sessions[0];
-                        self.input.alert_msg(
+                        self.notify(
                             &format!("Restoring session {}...", &session.session_id[..8]),
                             Duration::from_secs(2),
                         );
@@ -322,17 +322,17 @@ impl App<'_> {
                         self.session_id = session.session_id.clone();
                         self.render_restored_trace(&session.trace);
 
-                        self.input.alert_msg(
+                        self.notify(
                             &format!("Session {} restored", &session.session_id[..8]),
                             Duration::from_secs(2),
                         );
                     }
                     Ok(_) => {
-                        self.input
-                            .alert_msg("No saved sessions found", Duration::from_secs(2));
+                        self
+                            .notify("No saved sessions found", Duration::from_secs(2));
                     }
                     Err(e) => {
-                        self.input.alert_msg(
+                        self.notify(
                             &format!("Failed to list sessions: {}", e),
                             Duration::from_secs(3),
                         );
@@ -342,8 +342,8 @@ impl App<'_> {
             "/skills" => {
                 let skills = shai_core::tools::skills::discovery::discover_skills();
                 if skills.is_empty() {
-                    self.input
-                        .alert_msg("No skills found.", Duration::from_secs(3));
+                    self
+                        .notify("No skills found.", Duration::from_secs(3));
                 } else {
                     let mut msg = String::from("\x1b[1mAvailable skills:\x1b[0m\n");
                     for skill in &skills {
@@ -368,8 +368,8 @@ impl App<'_> {
                 }
             }
             _ => {
-                self.input
-                    .alert_msg("command unknown", Duration::from_secs(1));
+                self
+                    .notify("command unknown", Duration::from_secs(1));
             }
         }
         Ok(())

@@ -197,7 +197,10 @@ impl EditTool {
 
         // Check if the old_string exists in the content
         if !content.contains(old_string) {
-            return Err("Pattern not found in file".to_string());
+            return Err(format!(
+                "Pattern '{}' not found in file. Re-read the file to get current content.",
+                old_string.chars().take(80).collect::<String>()
+            ));
         }
 
         // Perform the replacement
@@ -221,7 +224,7 @@ impl EditTool {
 #[tool(name = "edit", description = r#"Executes find-and-replace operations across one or more files atomically. All edits are applied in memory first; if any edit fails, no files are modified.
 
 **Parameters:**
-- `files`: Array of `{ file_path, edits: [{ old_string, new_string, replace_all?, line_hash?, insert_after_hash? }] }`
+- `files`: Array of `{ path, edits: [{ old_string, new_string, replace_all?, line_hash?, insert_after_hash? }] }`
 
 **Edit Modes:**
 - **String replacement**: Set `old_string` and `new_string` to replace text within the file.
@@ -231,7 +234,22 @@ impl EditTool {
 **Critical:**
 - You must first use the `read` tool to inspect any file before editing it.
 - Edits within each file are applied sequentially.
-- The entire operation is atomic — if any edit fails, no files are modified."#, capabilities = [ToolCapability::Read, ToolCapability::Write])]
+- The entire operation is atomic — if any edit fails, no files are modified.
+
+**Examples:**
+Replace text in a file:
+```json
+{"files": [{"path": "src/main.rs", "edits": [{"old_string": "fn main() {", "new_string": "fn main() -> Result<(), Box<dyn std::error::Error> {"}]}]}
+```
+Replace all occurrences:
+```json
+{"files": [{"path": "src/lib.rs", "edits": [{"old_string": "todo!()", "new_string": "unimplemented!()", "replace_all": true}]}]}
+```
+Edit multiple files atomically:
+```json
+{"files": [{"path": "src/mod.rs", "edits": [{"old_string": "foo", "new_string": "bar"}]}, {"path": "src/lib.rs", "edits": [{"old_string": "baz", "new_string": "qux"}]}]}
+```
+"#, capabilities = [ToolCapability::Read, ToolCapability::Write])]
 impl EditTool {
     async fn execute_preview(&self, params: EditToolParams) -> Option<ToolResult> {
         Some(self.execute_internal(params, true).await)
@@ -250,7 +268,7 @@ impl EditTool {
         for file_edit in &params.files {
             if let Err(err) = self
                 .operation_log
-                .validate_edit_permission(&file_edit.file_path)
+                .validate_edit_permission(&file_edit.path)
                 .await
             {
                 return ToolResult::error(err);
@@ -262,10 +280,10 @@ impl EditTool {
         let mut diffs = Vec::new();
 
         for file_edit in &params.files {
-            let path = Path::new(&file_edit.file_path);
+            let path = Path::new(&file_edit.path);
 
             if !path.exists() {
-                return ToolResult::error(format!("File does not exist: {}", file_edit.file_path));
+                return ToolResult::error(format!("File does not exist: {}", file_edit.path));
             }
 
             let mut current_content = match fs::read_to_string(path) {
@@ -289,7 +307,7 @@ impl EditTool {
                     Err(error) => {
                         return ToolResult::error(format!(
                             "File '{}', Edit #{}: {}",
-                            file_edit.file_path,
+                            file_edit.path,
                             index + 1,
                             error
                         ));
@@ -298,8 +316,8 @@ impl EditTool {
             }
 
             let diff = self.myers_diff(&original_content, &current_content);
-            diffs.push((file_edit.file_path.clone(), diff));
-            staged_writes.push((file_edit.file_path.clone(), current_content));
+            diffs.push((file_edit.path.clone(), diff));
+            staged_writes.push((file_edit.path.clone(), current_content));
         }
 
         // Phase 3: Write all files (only after all edits succeeded)
@@ -315,7 +333,7 @@ impl EditTool {
         if !preview {
             for file_edit in &params.files {
                 self.operation_log
-                    .log_operation(FsOperationType::Edit, file_edit.file_path.clone())
+                    .log_operation(FsOperationType::Edit, file_edit.path.clone())
                     .await;
             }
         }
@@ -333,7 +351,7 @@ impl EditTool {
             .iter()
             .map(|f| {
                 json!({
-                    "file_path": f.file_path,
+                    "path": f.path,
                     "edit_count": f.edits.len(),
                 })
             })

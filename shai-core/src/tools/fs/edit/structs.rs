@@ -24,7 +24,7 @@ pub struct EditOperation {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct FileEdit {
     /// Path to the file to edit
-    pub file_path: String,
+    pub path: String,
     /// Array of edit operations to perform sequentially on this file
     pub edits: Vec<EditOperation>,
 }

@@ -65,7 +65,8 @@ impl Brain for CoderBrain {
 
         // Apply session-level trace compaction if needed
         if context.max_trace_chars > 0 {
-            compact_trace_if_needed(&mut trace, context.max_trace_chars);
+            let metadata = context.tool_call_metadata.read().await.clone();
+            compact_trace_if_needed(&mut trace, context.max_trace_chars, &metadata);
         }
 
         // Render the user's system prompt template (cached after first call)
@@ -89,6 +90,49 @@ impl Brain for CoderBrain {
         if context.is_plan_mode {
             system_prompt_full += "\n\n";
             system_prompt_full += PLAN_MODE_PROMPT;
+        }
+
+        // Inject dynamic budget awareness hints
+        let tool_calls = context.tool_call_count;
+        if let Some(soft_budget) = context.soft_tool_calls {
+            if tool_calls >= soft_budget {
+                // Critical notice every 5 calls once soft budget is exceeded
+                if tool_calls == soft_budget || (tool_calls - soft_budget) % 5 == 0 {
+                    system_prompt_full += "\n\n--- CRITICAL ---\n";
+                    system_prompt_full += &format!(
+                        "You have made {} tool calls — you may be going too deep. Step back and assess whether you already have the information you need.",
+                        tool_calls
+                    );
+                }
+            } else if tool_calls >= soft_budget * 9 / 10 {
+                system_prompt_full += "\n\n--- BUDGET WARNING ---\n";
+                system_prompt_full += &format!(
+                    "You have used {}/{} tool calls. Prioritize completing the task immediately.",
+                    tool_calls, soft_budget
+                );
+            } else if tool_calls >= soft_budget * 7 / 10 {
+                system_prompt_full += "\n\n--- Progress note ---\n";
+                system_prompt_full += &format!(
+                    "You have used {}/{} tool calls. Be efficient with your remaining calls.",
+                    tool_calls, soft_budget
+                );
+            } else if tool_calls > 0 && tool_calls % 5 == 0 {
+                // Gentle reminder every 5 calls below soft budget
+                system_prompt_full += "\n\n--- Progress Checkpoint ---\n";
+                system_prompt_full += &format!(
+                    "You have made {} tool calls so far. Briefly assess your progress: what have you accomplished, what remains, and what is the most efficient path forward?",
+                    tool_calls
+                );
+            }
+        } else {
+            // No soft budget configured — use periodic checkpoint every 10 calls
+            if tool_calls > 0 && tool_calls % 10 == 0 {
+                system_prompt_full += "\n\n--- Progress Checkpoint ---\n";
+                system_prompt_full += &format!(
+                    "You have made {} tool calls so far. Briefly assess your progress: what have you accomplished, what remains, and what is the most efficient path forward?",
+                    tool_calls
+                );
+            }
         }
 
         trace.insert(0, ChatMessage::System {

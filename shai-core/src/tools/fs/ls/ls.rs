@@ -227,19 +227,7 @@ impl LsTool {
     }
 }
 
-#[tool(name = "ls", description = r#"Provides a directory listing, showing the files and subdirectories contained within a specified location. It is your tool for exploring the file system structure.
-
-**Usage:**
-- The `directory` parameter must be an absolute path to the location you wish to inspect.
-- By default, lists files non-recursively to avoid overwhelming output.
-- Set `recursive: true` to include subdirectories (use with caution in large directories).
-- Default limit of 200 files prevents excessive output. Increase `max_files` if you need more, or set to `null` for unlimited.
-
-**Recommendations:**
-- For large directories, consider using the `find` tool instead, which offers powerful filtering and search capabilities.
-- Use `recursive: true` carefully, especially in directories like `node_modules/` which contain thousands of files.
-
-**IMPORTANT:** This is the preferred tool for listing directory contents. Do not use `bash` with `ls` or `dir` — use this tool instead."#, capabilities = [ToolCapability::Read])]
+#[tool(name = "ls", description = "Provides a directory listing, showing the files and subdirectories contained within a specified location. It is your tool for exploring the file system structure.\n\n**Usage:**\n- The `directory` parameter must be an absolute path to the location you wish to inspect.\n- By default, lists files non-recursively to avoid overwhelming output.\n- Set `recursive: true` to include subdirectories (use with caution in large directories).\n- Default limit of 200 files prevents excessive output. Increase `max_files` if you need more, or set to `null` for unlimited.\n\n**Recommendations:**\n- For large directories, consider using the `find` tool instead, which offers powerful filtering and search capabilities.\n- Use `recursive: true` carefully, especially in directories like `node_modules/` which contain thousands of files.\n\n**IMPORTANT:** This is the preferred tool for listing directory contents. Do not use `bash` with `ls` or `dir` \u{2014} use this tool instead.\n\n**Examples:**\nList current directory: {}\nList a specific directory with details: {\"directory\": \"/home/user/project\", \"long_format\": true}\nRecursive listing with custom limit: {\"directory\": \".\", \"recursive\": true, \"max_files\": 500}", capabilities = [ToolCapability::Read])]
 impl LsTool {
     async fn execute(&self, params: LsToolParams) -> ToolResult {
         let mut files_collected = 0;

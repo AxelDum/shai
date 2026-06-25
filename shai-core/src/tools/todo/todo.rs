@@ -76,7 +76,18 @@ pub struct TodoWriteTool {
 
 #[tool(
     name = "todo_write",
-    description = "Creates and manages a structured task list for the coding session. This is vital for organizing complex work, tracking progress, and showing a clear plan."
+    description = r#"Creates and manages a structured task list for the coding session. This is vital for organizing complex work, tracking progress, and showing a clear plan.
+
+**Examples:**
+Create tasks:
+```json
+{"todos": [{"content": "Implement the feature", "status": "in_progress"}, {"content": "Write tests", "status": "pending"}]}
+```
+Mark a task as completed:
+```json
+{"todos": [{"content": "Implement the feature", "status": "completed"}, {"content": "Write tests", "status": "in_progress"}]}
+```
+"#
 )]
 impl TodoWriteTool {
     pub fn new(storage: Arc<TodoStorage>) -> Self {

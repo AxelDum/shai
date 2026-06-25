@@ -34,6 +34,7 @@ impl AgentCore {
         let read_cache = self.read_cache.clone();
         let max_cached_commands = self.compaction_config.max_cached_commands;
         let max_cached_reads = self.compaction_config.max_cached_reads;
+        let tool_call_metadata = self.tool_call_metadata.clone();
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
@@ -55,6 +56,7 @@ impl AgentCore {
                 self.todo_storage.clone(),
                 read_cache.clone(),
                 max_cached_reads,
+                tool_call_metadata.clone(),
             );
             join_handles.push(handle);
         }
@@ -107,6 +109,7 @@ impl AgentCore {
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
         read_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_reads: usize,
+        tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();
@@ -184,15 +187,14 @@ impl AgentCore {
                                     .map(|f| {
                                         let path =
                                             f.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                        let offset = f
-                                            .get("offset")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let limit = f
-                                            .get("limit")
-                                            .and_then(|v| v.as_u64())
-                                            .unwrap_or(0);
-                                        let outline = f.get("outline").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        let offset =
+                                            f.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let limit =
+                                            f.get("limit").and_then(|v| v.as_u64()).unwrap_or(0);
+                                        let outline = f
+                                            .get("outline")
+                                            .and_then(|v| v.as_bool())
+                                            .unwrap_or(false);
                                         format!("{}:{}:{}:{}", path, offset, limit, outline)
                                     })
                                     .collect::<Vec<_>>()
@@ -215,15 +217,9 @@ impl AgentCore {
 
                     // Execute or use cached result
                     let result: ToolResult = if let Some(cached) = cached_output {
-                        ToolResult::success(format!(
-                            "[cached] You just ran this command. The result is the same.\n\n{}",
-                            cached
-                        ))
+                        ToolResult::success(cached)
                     } else if let Some(ref cached) = cached_read {
-                        ToolResult::success(format!(
-                            "[cached] This file was read recently and hasn't changed.\n\n{}",
-                            cached
-                        ))
+                        ToolResult::success(cached.clone())
                     } else {
                         // execute tool
                         let tool_handle = Self::spawn_tool_exec(
@@ -287,14 +283,14 @@ impl AgentCore {
                         // Invalidate read cache entries for edited files
                         if call.tool_name == "edit" || call.tool_name == "write" {
                             let edited_paths: Vec<String> = if call.tool_name == "edit" {
-                                // edit tool uses files: [{file_path, edits: [...]}]
+                                // edit tool uses files: [{path, edits: [...]}]
                                 call.parameters
                                     .get("files")
                                     .and_then(|v| v.as_array())
                                     .map(|arr| {
                                         arr.iter()
                                             .filter_map(|f| {
-                                                f.get("file_path")
+                                                f.get("path")
                                                     .and_then(|p| p.as_str())
                                                     .map(String::from)
                                             })
@@ -338,6 +334,16 @@ impl AgentCore {
                         &raw_output,
                         &compaction_config,
                     );
+                    {
+                        let mut metadata = tool_call_metadata.write().await;
+                        metadata.insert(
+                            call.tool_call_id.clone(),
+                            crate::agent::agent::ToolCallInfo {
+                                tool_name: call.tool_name.clone(),
+                                primary_param: crate::agent::output::pretty::PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name).map(|(_, path)| path),
+                            },
+                        );
+                    }
                     let _ = {
                         trace.write().await.push(ChatMessage::Tool {
                             tool_call_id: call.tool_call_id.clone(),
@@ -383,13 +389,13 @@ impl AgentCore {
         mut internal_rx: broadcast::Receiver<InternalAgentEvent>,
     ) -> JoinHandle<ToolResult> {
         tokio::spawn(async move {
-            // check permission, we allow all Read Tool
+            // Read-only tools are always allowed without permission
+            // Plan mode allows all tools (the system prompt prevents writes)
+            // Sudo mode allows all tools without asking
             let can_run = tool.capabilities().is_empty()
                 || tool.capabilities() == &[ToolCapability::Read]
-                || claims
-                    .read()
-                    .await
-                    .is_permitted(&tool.name(), &call.parameters);
+                || claims.read().await.is_sudo()
+                || claims.read().await.is_plan_mode();
 
             // request permission if needed (|| is short-circuiting, so won't call if can_run is true)
             let can_run = can_run
@@ -407,12 +413,6 @@ impl AgentCore {
                 };
 
             if !can_run {
-                let claims_guard = claims.read().await;
-                if claims_guard.is_plan_mode() {
-                    return ToolResult::error(
-                        "Tool execution is disabled in PLAN mode. Do not attempt to write, edit, or execute commands. Instead, describe the changes you would make as a detailed plan.".to_string(),
-                    );
-                }
                 return ToolResult::denied();
             }
 
@@ -488,7 +488,14 @@ impl AgentCore {
     ) -> Result<(Arc<dyn AnyTool>, ToolCall), ToolResult> {
         from_str(&tc.function.arguments)
             .map_err(|_e| ToolResult::error("failed to parse tool parameters".to_string()))
-            .and_then(|params| {
+            .and_then(|mut params| {
+                // Unwrap string-encoded JSON parameters (e.g. when the LLM
+                // returns tool parameters as a JSON string instead of an object)
+                if let serde_json::Value::String(ref s) = params {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                        params = parsed;
+                    }
+                }
                 let tool_call = ToolCall {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),
@@ -501,7 +508,12 @@ impl AgentCore {
                     .find(|t| t.name() == tool_call.tool_name)
                     .cloned()
                     .ok_or_else(|| {
-                        ToolResult::error(format!("tool not found: {}", tool_call.tool_name))
+                        let available: Vec<String> = tools.iter().map(|t| t.name()).collect();
+                        ToolResult::error(format!(
+                            "tool not found: '{}'. Available tools: {}",
+                            tool_call.tool_name,
+                            available.join(", ")
+                        ))
                     })
                     .map(|tool| (tool, tool_call))
             })

@@ -163,7 +163,22 @@ impl FindTool {
 **Output:**
 - Returns a list of matching file paths, sorted with the most recently modified files appearing first. This helps prioritize recently changed files.
 
-**IMPORTANT:** This is the preferred tool for searching files by name or content. Do not use `bash` with `grep` or `find` commands — use this tool instead."#, capabilities = [ToolCapability::Read])]
+**IMPORTANT:** This is the preferred tool for searching files by name or content. Do not use `bash` with `grep` or `find` commands — use this tool instead.
+
+**Examples:**
+Search file contents for a pattern:
+```json
+{"pattern": "fn main", "find_type": "content"}
+```
+Search filenames matching a pattern:
+```json
+{"pattern": "\\.rs$", "find_type": "filename"}
+```
+Search only in specific file types:
+```json
+{"pattern": "TODO", "find_type": "content", "include_extensions": "rs,py"}
+```
+"#, capabilities = [ToolCapability::Read])]
 
 impl FindTool {
     async fn execute(&self, params: FindToolParams) -> ToolResult {
@@ -255,5 +270,32 @@ impl FindTool {
             output: serde_json::to_string_pretty(&all_results).unwrap_or_default(),
             metadata: Some(meta),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shai_llm::ToolDescription;
+
+    #[test]
+    fn test_find_schema_required_fields() {
+        let tool = FindTool::new();
+        let schema = tool.parameters_schema();
+
+        // Verify all expected properties exist
+        let props = schema["properties"]
+            .as_object()
+            .expect("properties should be an object");
+        assert!(props.contains_key("pattern"));
+        assert!(props.contains_key("path"));
+        assert!(props.contains_key("include_extensions"));
+        assert!(props.contains_key("exclude_patterns"));
+        assert!(props.contains_key("max_results"));
+        assert!(props.contains_key("case_sensitive"));
+        assert!(props.contains_key("find_type"));
+        assert!(props.contains_key("show_line_numbers"));
+        assert!(props.contains_key("context_lines"));
+        assert!(props.contains_key("whole_word"));
     }
 }

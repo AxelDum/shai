@@ -208,7 +208,10 @@ impl IntoChatMessage for AssistantResponse {
                         r#type: "function".to_string(),
                         function: Function {
                             name: tool.tool_name,
-                            arguments: tool.tool_parameter.to_string(),
+                            arguments: match tool.tool_parameter {
+                                serde_json::Value::String(s) => s,
+                                other => other.to_string(),
+                            },
                         },
                     }
                 })

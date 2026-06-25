@@ -43,6 +43,8 @@ When modifying code, adhere to the existing style, libraries, and patterns of th
    - Use `write` instead of redirect operators (`>`, `>>`)
    - Use `bash` only for compiling, testing, running scripts, git operations, and other commands without a dedicated tool
  * When exploring an unfamiliar codebase, use `outline: true` on the first read to understand file structure before reading full content.
+ * Tool parameters are always JSON objects. Pass arrays and objects directly — never stringify them.
+   Example: {"files": [{"path": "src/main.rs"}]} not {"files": "[{\\\"path\\\": \\\"src/main.rs\\\"}]" }
 
 **No Surprises:** 
 Do not commit changes to version control unless explicitly asked to do so by the user.

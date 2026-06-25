@@ -24,7 +24,13 @@ pub struct SkillTool;
 
 #[tool(
     name = "skill",
-    description = "Load and display the full instructions of a named skill. Use this when you need the detailed procedure described by a skill from the catalog. Returns the full SKILL.md content."
+    description = r#"Load and display the full instructions of a named skill. Use this when you need the detailed procedure described by a skill from the catalog. Returns the full SKILL.md content.
+
+**Examples:**
+```json
+{"name": "my-skill-name"}
+```
+"#
 )]
 impl SkillTool {
     pub fn new() -> Self {

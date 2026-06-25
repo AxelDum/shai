@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use ansi_to_tui::IntoText;
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
-    widgets::{Paragraph, Widget},
+    widgets::{Paragraph, Widget, Wrap},
     Frame,
 };
 
@@ -77,37 +76,39 @@ impl ConversationHistory {
             return;
         }
 
-        let total_lines = self.lines.len();
         let visible_height = area.height as usize;
-
         if visible_height == 0 {
             return;
         }
 
-        // Determine which lines to show
-        let end = total_lines.saturating_sub(self.scroll_offset);
-        let start = end.saturating_sub(visible_height);
+        let total_lines = self.lines.len();
 
-        let lines_to_show: Vec<&ConversationLine> = self
+        // Build the combined text — newest lines are at the bottom.
+        // We render all lines and use Paragraph::scroll to shift the viewport
+        // up by scroll_offset lines from the bottom.
+        let combined: String = self
             .lines
-            .iter()
-            .skip(start)
-            .take(end.saturating_sub(start))
-            .collect();
-
-        let combined: String = lines_to_show
             .iter()
             .map(|l| l.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
 
+        // Calculate how many lines to skip from the top.
+        // scroll_offset = 0 means showing the latest lines (bottom).
+        // We need to skip lines from the top so the viewport shows the right window.
+        let skip_from_top = total_lines.saturating_sub(self.scroll_offset + visible_height);
+
         if let Ok(text) = combined.into_text() {
-            let paragraph = Paragraph::new(text);
+            let paragraph = Paragraph::new(text)
+                .wrap(Wrap { trim: false })
+                .scroll((skip_from_top as u16, 0));
             f.render_widget(paragraph, area);
         } else {
-            // Fallback: render as plain text
-            let paragraph = Paragraph::new(combined);
+            let paragraph = Paragraph::new(combined)
+                .wrap(Wrap { trim: false })
+                .scroll((skip_from_top as u16, 0));
             f.render_widget(paragraph, area);
         }
     }
 }
+

@@ -8,7 +8,10 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 use chrono::Utc;
 use cli_clipboard::ClipboardProvider;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{self, disable_raw_mode};
 use futures::{future::FutureExt, StreamExt};
@@ -16,11 +19,9 @@ use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::Stylize;
-use ratatui::text::Text;
 use ratatui::Terminal;
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Style},
     widgets::Widget,
     Frame, TerminalOptions, Viewport,
 };
@@ -45,6 +46,8 @@ use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
 use super::statusbar::StatusBar;
 use super::theme::Theme;
+use super::viewer::AlternateScreenViewer;
+use super::session_picker::{SessionPicker, SessionPickerAction};
 use crate::tui::input::InputArea;
 use crate::tui::perm::PermissionWidget;
 use crate::tui::perm_alt_screen::AlternateScreenPermissionModal;
@@ -62,7 +65,6 @@ pub struct AppRunningAgent {
 
 pub struct App<'a> {
     pub(crate) terminal: Option<Terminal<CrosstermBackend<io::Stdout>>>,
-    pub(crate) terminal_height: u16,
 
     pub(crate) agent: Option<AppRunningAgent>,
     pub(crate) custom_agent: Option<Box<dyn Agent>>,
@@ -92,6 +94,10 @@ pub struct App<'a> {
     // Session persistence
     pub(crate) session_id: String,
     pub(crate) last_assistant_response: String,
+
+    // Last tool result for expandable viewer
+    pub(crate) last_tool_output: Option<String>,
+    pub(crate) last_tool_file_path: Option<String>,
 }
 
 // Agent-related Internals
@@ -99,21 +105,10 @@ impl App<'_> {
     pub async fn start_agent(
         &mut self,
         agent_name: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // When the terminal is already initialized (e.g. during /restore), skip the
-        // println! banner since writing directly to stdout corrupts the inline viewport.
-        let suppress_banner = self.terminal.is_some();
-
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let mut agent: Box<dyn Agent> = if let Some(agent_name) = agent_name {
             // Load custom agent config
             let config = AgentConfig::load(agent_name)?;
-
-            if !suppress_banner {
-                println!(
-                    "\x1b[2m░ agent {} - {} on {}\x1b[0m",
-                    agent_name, config.llm_provider.model, config.llm_provider.provider
-                );
-            }
 
             // Store agent metadata for status bar
             self.agent_model = config.llm_provider.model.clone();
@@ -127,16 +122,21 @@ impl App<'_> {
             // Use default coder agent
             let (llm, model) = ShaiConfig::get_llm().await?;
 
-            if !suppress_banner {
-                println!("\x1b[2m░ {} on {}\x1b[0m", model, llm.provider().name());
-            }
-
             // Store agent metadata for status bar
             self.agent_model = model.clone();
             self.agent_provider = llm.provider().name().to_string();
             self.agent_name = None;
 
             Box::new(coder(Arc::new(llm), model))
+        };
+
+        let banner = if let Some(name) = agent_name {
+            format!(
+                "\x1b[2m░ agent {} - {} on {}\x1b[0m",
+                name, self.agent_model, self.agent_provider
+            )
+        } else {
+            format!("\x1b[2m░ {} on {}\x1b[0m", self.agent_model, self.agent_provider)
         };
 
         // Get Agent I/O
@@ -147,7 +147,7 @@ impl App<'_> {
         let handle = tokio::spawn(async move {
             match agent.run().await {
                 Ok(result) => debug!(target: "agent::loop", "Agent completed: {:?}", result),
-                Err(error) => warn!(target: "agent::loop", "Agent failed: {:?}", error),
+                Err(error) => warn!(target: "agent::loop", "Agent failed: {}", error),
             }
         });
 
@@ -176,7 +176,7 @@ impl App<'_> {
             }
         }
 
-        Ok(())
+        Ok(banner)
     }
 
     async fn receive_agent_event(&mut self) -> Option<AgentEvent> {
@@ -220,17 +220,7 @@ impl App<'_> {
             };
 
             if let Some(text) = formatted {
-                if let Some(ref mut terminal) = self.terminal {
-                    let wrapped = text.into_text().unwrap();
-                    let line_count = wrapped.lines.len() as u16;
-                    terminal.clear().ok();
-                    if let Err(e) = terminal.insert_before(line_count, |buf| {
-                        wrapped.render(buf.area, buf);
-                    }) {
-                        warn!(target: "agent::loop", "Failed to insert restored trace: {}", e);
-                    }
-                    self.history.add_text(&text);
-                }
+                self.history.add_text(&text);
             }
         }
     }
@@ -286,9 +276,18 @@ impl App<'_> {
             self.tool_start_times
                 .insert(call.tool_call_id.clone(), Instant::now());
         }
-        if let AgentEvent::ToolCallCompleted { call, .. } = &event {
+        if let AgentEvent::ToolCallCompleted { call, result, .. } = &event {
             self.running_tools.remove(&call.tool_call_id);
             self.tool_start_times.remove(&call.tool_call_id);
+
+            // Store tool result for expandable viewer
+            if let ToolResult::Success { output, .. } = result {
+                let file_path =
+                    PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name)
+                        .map(|(_, path)| path);
+                self.last_tool_output = Some(output.clone());
+                self.last_tool_file_path = file_path;
+            }
         }
 
         // Format and display event
@@ -306,17 +305,8 @@ impl App<'_> {
                 }
             }
 
-            if let Some(ref mut terminal) = self.terminal {
-                let wrapped = formatted.into_text().unwrap();
-                let line_count = wrapped.lines.len() as u16;
-                terminal.clear()?; // this is to avoid visual artifact
-                terminal.insert_before(line_count, |buf| {
-                    wrapped.render(buf.area, buf);
-                })?;
-
-                // Also add to conversation history
-                self.history.add_text(&formatted);
-            }
+            // Add to conversation history (rendered by draw_ui)
+            self.history.add_text(&formatted);
         }
 
         // Handle permission requests - just add to queue
@@ -345,16 +335,8 @@ impl App<'_> {
 
         // Handle error events - display inline in red
         if let AgentEvent::Error { error } = &event {
-            let error_msg = format!("\x1b[31m❌ Error: {}\x1b[0m", error);
-            if let Some(ref mut terminal) = self.terminal {
-                let wrapped = error_msg.into_text().unwrap();
-                let line_count = wrapped.lines.len() as u16;
-                terminal.clear()?;
-                terminal.insert_before(line_count, |buf| {
-                    wrapped.render(buf.area, buf);
-                })?;
-                self.history.add_text(&error_msg);
-            }
+            let error_msg = format!("\x1b[31m✘ Error: {}\x1b[0m", error);
+            self.history.add_text(&error_msg);
         }
 
         Ok(())
@@ -369,7 +351,6 @@ impl App<'_> {
 
         Self {
             terminal: None,
-            terminal_height: 5,
             agent: None,
             custom_agent: None,
             formatter: PrettyFormatter::new(),
@@ -391,6 +372,8 @@ impl App<'_> {
             agent_name: None,
             session_id: uuid::Uuid::new_v4().to_string(),
             last_assistant_response: String::new(),
+            last_tool_output: None,
+            last_tool_file_path: None,
         }
     }
 
@@ -404,7 +387,8 @@ impl App<'_> {
         // Restore keyboard protocol
         let _ = execute!(
             std::io::stdout(),
-            crossterm::event::PopKeyboardEnhancementFlags
+            crossterm::event::PopKeyboardEnhancementFlags,
+            DisableMouseCapture,
         );
         std::io::stdout().flush().ok();
         let _ = disable_raw_mode();
@@ -427,22 +411,33 @@ impl App<'_> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Start the agent (custom or default)
         let agent_name_ref = agent_name.as_deref();
-        self.start_agent(agent_name_ref)
-            .await
-            .map_err(|e| -> Box<dyn std::error::Error> {
-                if let Some(name) = agent_name_ref {
-                    format!("could not start custom agent '{}': {}", name, e).into()
-                } else {
-                    "could not start shai agent, run shai auth first"
-                        .to_string()
-                        .into()
-                }
-            })?;
+        let banner = self.start_agent(agent_name_ref).await.map_err(|e| -> Box<dyn std::error::Error> {
+            if let Some(name) = agent_name_ref {
+                format!("could not start custom agent '{}': {}", name, e).into()
+            } else {
+                "could not start shai agent, run shai auth first"
+                    .to_string()
+                    .into()
+            }
+        })?;
 
         // create terminal
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
-            viewport: Viewport::Inline(8),
+            viewport: Viewport::Fullscreen,
         }));
+
+        // Enable mouse capture so we receive scroll events
+        execute!(io::stdout(), EnableMouseCapture).ok();
+
+        // Clear the alternate screen so previous shell output doesn't show through
+        if let Some(ref mut terminal) = self.terminal {
+            terminal.clear()?;
+        }
+
+        // Render the startup banner into the TUI history
+        if !banner.is_empty() {
+            self.history.add_text(&banner);
+        }
 
         std::io::stdout().flush().ok();
 
@@ -499,7 +494,20 @@ impl App<'_> {
                     terminal.clear()?;
                 }
             }
+            Event::Mouse(mouse_event) => {
+                match mouse_event.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.history.scroll_up(3);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.history.scroll_down(3);
+                    }
+                    _ => {}
+                }
+            }
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                // Any key resets scroll to bottom
+                self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
             }
             _ => {}
@@ -579,27 +587,6 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+P — Toggle auto-approve permissions (sudo mode)
-        if matches!(key_event.code, KeyCode::Char('p'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
-            if let Some(ref agent) = self.agent {
-                let is_sudo = agent.controller.is_sudo().await.unwrap_or(false);
-                if is_sudo {
-                    let _ = agent.controller.no_sudo().await;
-                    self.input
-                        .alert_msg("Auto-approve disabled", Duration::from_secs(2));
-                } else {
-                    let _ = agent.controller.sudo().await;
-                    self.input
-                        .alert_msg("Auto-approve enabled", Duration::from_secs(2));
-                }
-            }
-            return Ok(());
-        }
-
         // Handle Shift+Tab — Cycle agent mode (Plan/Manual/Auto)
         if key_event.code == KeyCode::BackTab {
             let mode = self.input.cycle_agent_mode();
@@ -608,10 +595,47 @@ impl App<'_> {
                 match mode {
                     AgentMode::Plan => {
                         let _ = agent.controller.plan_mode().await;
+                        let _ = agent.controller.no_sudo().await;
                     }
-                    AgentMode::Manual | AgentMode::Auto => {
+                    AgentMode::Manual => {
                         let _ = agent.controller.no_plan_mode().await;
+                        let _ = agent.controller.no_sudo().await;
                     }
+                    AgentMode::Auto => {
+                        let _ = agent.controller.no_plan_mode().await;
+                        let _ = agent.controller.sudo().await;
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // Handle Ctrl+X — Expand last tool result in alternate screen viewer
+        if matches!(key_event.code, KeyCode::Char('x'))
+            && key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            if let Some(output) = self.last_tool_output.clone() {
+                let mut viewer =
+                    AlternateScreenViewer::new(output, self.last_tool_file_path.clone());
+                let _ = viewer.run().await;
+            }
+            return Ok(());
+        }
+
+        // Handle Ctrl+O — Open session picker
+        if matches!(key_event.code, KeyCode::Char('o'))
+            && key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            let sessions = shai_core::session::SessionPersist::list_sessions()
+                .unwrap_or_default();
+            let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
+            if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
+                if let Some(session) = sessions.get(idx) {
+                    self.restore_session(&session.session_id).await?;
                 }
             }
             return Ok(());
@@ -640,6 +664,8 @@ impl App<'_> {
                         shai_core::agent::events::PermissionResponse::AllowAlways
                     ) {
                         let _ = agent.controller.sudo().await;
+                        self.input.set_agent_mode(AgentMode::Auto);
+                        self.status_bar.set_agent_mode("Auto");
                     }
                     if let Err(e) = agent
                         .controller
@@ -685,10 +711,19 @@ impl App<'_> {
 
                 if widget.height() > terminal_height.saturating_sub(5) {
                     // Use alternate screen for large modals
-                    if let Ok(mut modal) = AlternateScreenPermissionModal::new(&widget, palette) {
-                        let action = modal.run().await.unwrap_or(PermissionModalAction::Nope);
-                        self.handle_permission_action(action).await?;
-                    }
+                    let action = match AlternateScreenPermissionModal::new(&widget, palette) {
+                        Ok(mut modal) => modal.run().await.unwrap_or_else(|_| {
+                            PermissionModalAction::Response {
+                                request_id: request_id.clone(),
+                                choice: shai_core::agent::PermissionResponse::Deny,
+                            }
+                        }),
+                        Err(_) => PermissionModalAction::Response {
+                            request_id: request_id.clone(),
+                            choice: shai_core::agent::PermissionResponse::Deny,
+                        },
+                    };
+                    self.handle_permission_action(action).await?;
                 } else {
                     // Use inline modal for small modals
                     self.state = AppModalState::PermissionModal { widget };
@@ -737,28 +772,26 @@ impl App<'_> {
         .max(5);
 
         let running_tools_height = self.running_tools.len() as u16;
-        let height = modal_height + 1 + running_tools_height + 1; // status bar
 
         if let Some(ref mut terminal) = self.terminal {
-            if height != self.terminal_height {
-                terminal.set_viewport_height(height + 1)?;
-                self.terminal_height = height;
-            }
-
             terminal.draw(|frame| {
-                let [_, inprogress, modal, statusbar] = Layout::vertical([
-                    Constraint::Length(1),                        // padding
-                    Constraint::Length(running_tools_height + 1), // running tool (if any)
-                    Constraint::Length(modal_height),             // input or modal
-                    Constraint::Length(1),                        // status bar
+                let [_, history_area, tools_area, modal_area, statusbar_area] = Layout::vertical([
+                    Constraint::Length(1),                    // padding
+                    Constraint::Fill(1),                      // conversation history
+                    Constraint::Length(running_tools_height), // running tools
+                    Constraint::Length(modal_height),         // input or modal
+                    Constraint::Length(1),                    // status bar
                 ])
                 .areas(frame.area());
+
+                // draw conversation history
+                self.history.draw(frame, history_area);
 
                 // draw running tool with duration
                 if !self.running_tools.is_empty() {
                     let layout: std::rc::Rc<[Rect]> =
-                        Layout::vertical(vec![Constraint::Length(1); self.running_tools.len() + 1])
-                            .split(inprogress);
+                        Layout::vertical(vec![Constraint::Length(1); self.running_tools.len()])
+                            .split(tools_area);
                     for ((tool_id, tc), &area) in self.running_tools.iter().zip(&*layout) {
                         let elapsed = self
                             .tool_start_times
@@ -776,14 +809,15 @@ impl App<'_> {
 
                 // draw modal
                 match &self.state {
-                    AppModalState::InputShown => self.input.draw(frame, modal),
-                    AppModalState::PermissionModal { widget } => widget.draw(frame, modal),
+                    AppModalState::InputShown => self.input.draw(frame, modal_area),
+                    AppModalState::PermissionModal { widget } => widget.draw(frame, modal_area),
                 }
 
                 // draw status bar
-                self.status_bar.draw(frame, statusbar);
+                self.status_bar.draw(frame, statusbar_area);
             })?;
         }
+
         Ok(())
     }
 }

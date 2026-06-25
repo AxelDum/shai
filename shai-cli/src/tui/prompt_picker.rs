@@ -15,44 +15,77 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Padding},
     Frame, Terminal,
 };
-use shai_core::session::SessionData;
+use shai_core::tools::prompts::PromptInfo;
 use std::io::{self, stdout, Write};
 
 use super::theme::ThemePalette;
 
-/// Result of the session picker modal.
-pub enum SessionPickerAction {
-    /// User selected a session by index into the provided list.
-    Selected(usize),
-    /// User cancelled (Esc / Ctrl+C).
+/// Result of the prompt picker modal.
+pub enum PromptPickerAction {
+    /// User confirmed the selection. Contains the list of active prompt names.
+    Selected(Vec<String>),
+    /// User cancelledleld (Esc / Ctrl+C).
     Cancelled,
 }
 
-struct SessionPickerState {
-    sessions: Vec<SessionData>,
+struct PromptPickerState {
+    prompts: Vec<PromptInfo>,
+    /// Indices of active prompts.
+    active: Vec<usize>,
     selected: usize,
     scroll_offset: usize,
 }
 
-impl SessionPickerState {
-    fn new(sessions: Vec<SessionData>) -> Self {
+impl PromptPickerState {
+    fn new(prompts: Vec<PromptInfo>, active: &[String]) -> Self {
+        let active_indices = prompts
+            .iter()
+ .enumerate()
+            .filter_map(|(i, p)| {
+                if active.iter().any(|a| a == &p.name) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
         Self {
-            sessions,
+            prompts,
+            active: active_indices,
             selected: 0,
             scroll_offset: 0,
         }
     }
+
+    fn toggle(&mut self, idx: usize) {
+        if let Some(pos) = self.active.iter().position(|&x| x == idx) {
+            self.active.remove(pos);
+        } else {
+            self.active.push(idx);
+        }
+    }
+
+    fn is_active(&self, idx: usize) -> bool {
+        self.active.contains(&idx)
+    }
+
+    fn selected_names(&self) -> Vec<String> {
+        self.active
+            .iter()
+            .filter_map(|&i| self.prompts.get(i).map(|p| p.name.clone()))
+            .collect()
+    }
 }
 
-pub struct SessionPicker {
-    state: SessionPickerState,
+pub struct PromptPicker {
+    state: PromptPickerState,
     palette: ThemePalette,
 }
 
-impl SessionPicker {
-    pub fn new(sessions: Vec<SessionData>, palette: ThemePalette) -> Self {
+impl PromptPicker {
+    pub fn new(prompts: Vec<PromptInfo>, active: &[String], palette: ThemePalette) -> Self {
         Self {
-            state: SessionPickerState::new(sessions),
+            state: PromptPickerState::new(prompts, active),
             palette,
         }
     }
@@ -62,20 +95,20 @@ impl SessionPicker {
 
         let chunks = Layout::vertical([
             Constraint::Length(1), // title
-            Constraint::Min(1),    // list
+            Constraint::Min(1),  // list
         ])
         .split(area);
 
         // Title
         let title = Line::from(vec![Span::styled(
-            " Restore Session ",
+            " System Prompts (Space to toggle, Enter to confirm) ",
             Style::default().fg(self.palette.suggestion_selected_fg).bold(),
         )]);
         frame.render_widget(title, chunks[0]);
 
-        if self.state.sessions.is_empty() {
+        if self.state.prompts.is_empty() {
             let empty = Line::from(Span::styled(
-                " No saved sessions found.",
+                " No system prompts found. Add .md files to .shai/prompts/ or ~/.config/shai/prompts/",
                 Style::default().fg(self.palette.placeholder),
             ));
             frame.render_widget(empty, chunks[1]);
@@ -86,7 +119,7 @@ impl SessionPicker {
         let selected = self.state.selected;
 
         // Adjust scroll_offset so the selected item is always visible
-        let scroll_offset = if self.state.sessions.len() <= max_visible {
+        let scroll_offset = if self.state.prompts.len() <= max_visible {
             0
         } else if selected < self.state.scroll_offset {
             selected
@@ -96,39 +129,20 @@ impl SessionPicker {
             self.state.scroll_offset
         };
 
-        let visible_count = self.state.sessions.len().min(max_visible);
-        let items: Vec<ListItem> = self
-            .state
-            .sessions
-            .iter()
-            .skip(scroll_offset)
-            .take(visible_count)
-            .enumerate()
-            .map(|(i, session)| {
-                let idx = scroll_offset + i;
-                let name = session.name.as_deref().unwrap_or("unnamed");
-                let id_short = &session.session_id[..8.min(session.session_id.len())];
+        let end = (scroll_offset + max_visible).min(self.state.prompts.len());
+        let visible_range = scroll_offset..end;
 
-                let line = Line::from(vec![
-                    Span::styled(
-                        format!("{:>2}. ", idx + 1),
-                        Style::default().fg(self.palette.placeholder),
-                    ),
-                    Span::styled(
-                        format!("{:<50} ", name),
-                        Style::default().fg(self.palette.input_text),
-                    ),
-                    Span::styled(
-                        format!("({})", id_short),
-                        Style::default().fg(self.palette.placeholder),
-                    ),
-                ]);
-
-                if idx == self.state.selected {
-                    ListItem::new(line).style(Style::default().bg(self.palette.suggestion_selected_bg))
+        let items: Vec<ListItem> = visible_range
+            .clone()
+            .map(|i| {
+                let prompt = &self.state.prompts[i];
+                let check = if self.state.is_active(i) { "[x]" } else { "[ ]" };
+                let label = if prompt.description.is_empty() {
+                    format!("{} {}", check, prompt.name)
                 } else {
-                    ListItem::new(line)
-                }
+                    format!("{} {} - {}", check, prompt.name, prompt.description)
+                };
+                ListItem::new(label)
             })
             .collect();
 
@@ -136,15 +150,23 @@ impl SessionPicker {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_set(ratatui::symbols::border::ROUNDED)
                     .border_style(Style::default().fg(self.palette.border))
-                    .padding(Padding::new(1, 1, 0, 0)),
+                    .padding(Padding::horizontal(1)),
+            )
+            .highlight_style(
+                Style::default()
+                    .fg(self.palette.suggestion_selected_fg)
+                    .bg(self.palette.suggestion_selected_bg),
             );
 
-        frame.render_widget(list, chunks[1]);
+        // Manually highlight the selected item
+        let highlight_idx = selected.saturating_sub(scroll_offset);
+        let mut list_state = ratatui::widgets::ListState::default();
+        list_state.select(Some(highlight_idx));
+        frame.render_stateful_widget(list, chunks[1], &mut list_state);
     }
 
-    pub async fn run(&mut self) -> io::Result<SessionPickerAction> {
+    pub async fn run(&mut self) -> io::Result<PromptPickerAction> {
         execute!(stdout(), EnterAlternateScreen)?;
 
         let result = self.run_inner().await;
@@ -155,7 +177,7 @@ impl SessionPicker {
         result
     }
 
-    async fn run_inner(&mut self) -> io::Result<SessionPickerAction> {
+    async fn run_inner(&mut self) -> io::Result<PromptPickerAction> {
         let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         let mut reader = event::EventStream::new();
 
@@ -171,7 +193,7 @@ impl SessionPicker {
                         if key.code == KeyCode::Char('c')
                             && key.modifiers.contains(KeyModifiers::CONTROL)
                         {
-                            return Ok(SessionPickerAction::Cancelled);
+                            return Ok(PromptPickerAction::Cancelled);
                         }
                         match key.code {
                             KeyCode::Up => {
@@ -180,7 +202,7 @@ impl SessionPicker {
                                 }
                             }
                             KeyCode::Down => {
-                                if self.state.selected + 1 < self.state.sessions.len() {
+                                if self.state.selected + 1 < self.state.prompts.len() {
                                     self.state.selected += 1;
                                 }
                             }
@@ -189,21 +211,27 @@ impl SessionPicker {
                             }
                             KeyCode::PageDown => {
                                 self.state.selected = (self.state.selected + 10)
-                                    .min(self.state.sessions.len().saturating_sub(1));
+                                    .min(self.state.prompts.len().saturating_sub(1));
                             }
                             KeyCode::Home => {
                                 self.state.selected = 0;
                             }
                             KeyCode::End => {
-                                self.state.selected = self.state.sessions.len().saturating_sub(1);
+                                self.state.selected =
+                                    self.state.prompts.len().saturating_sub(1);
                             }
-                            KeyCode::Enter => {
-                                if !self.state.sessions.is_empty() {
-                                    return Ok(SessionPickerAction::Selected(self.state.selected));
+                            KeyCode::Char(' ') => {
+                                if !self.state.prompts.is_empty() {
+                                    self.state.toggle(self.state.selected);
                                 }
                             }
+                            KeyCode::Enter => {
+                                return Ok(PromptPickerAction::Selected(
+                                    self.state.selected_names(),
+                                ));
+                            }
                             KeyCode::Esc => {
-                                return Ok(SessionPickerAction::Cancelled);
+                                return Ok(PromptPickerAction::Cancelled);
                             }
                             _ => {}
                         }

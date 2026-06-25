@@ -439,6 +439,12 @@ impl AgentCore {
                 let enabled = guard.is_plan_mode();
                 Ok(AgentResponse::PlanModeStatus { enabled })
             }
+            AgentRequest::SetActivePrompts(prompts) => {
+                let mut guard = self.permissions.write().await;
+                guard.set_active_prompts(prompts);
+                let prompts = guard.active_prompts().to_vec();
+                Ok(AgentResponse::PromptsStatus { prompts })
+            }
             AgentRequest::Terminate => {
                 self.handle_event(InternalAgentEvent::CancelTask)
                     .await

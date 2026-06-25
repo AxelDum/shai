@@ -46,6 +46,8 @@ pub enum AgentRequest {
     Sudo(Option<bool>),
     /// Manage plan mode: Some(true) = enable, Some(false) = disable, None = get status
     PlanMode(Option<bool>),
+    /// Set active system prompts by name
+    SetActivePrompts(Vec<String>),
     /// Drop controller IO, this closes it for all controller.
     /// Once this is done, it cannot be reopen!
     Droping,
@@ -61,6 +63,7 @@ pub enum AgentResponse {
     Trace { trace: Vec<ChatMessage> },
     SudoStatus { enabled: bool },
     PlanModeStatus { enabled: bool },
+    PromptsStatus { prompts: Vec<String> },
     Error { error: String },
 }
 
@@ -294,6 +297,26 @@ impl AgentController {
             AgentResponse::PlanModeStatus { enabled } => Ok(enabled),
             _ => Err(AgentError::InvalidResponse(
                 "Expected PlanModeStatus response".to_string(),
+            )),
+        }
+    }
+
+    /// Set active system prompts by name
+    pub async fn set_active_prompts(&self, prompts: Vec<String>) -> Result<Vec<String>, AgentError> {
+        match self.send(AgentRequest::SetActivePrompts(prompts)).await? {
+            AgentResponse::PromptsStatus { prompts } => Ok(prompts),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected PromptsStatus response".to_string(),
+            )),
+        }
+    }
+
+    /// Get active system prompts
+    pub async fn get_active_prompts(&self) -> Result<Vec<String>, AgentError> {
+        match self.send(AgentRequest::SetActivePrompts(vec!())).await? {
+            AgentResponse::PromptsStatus { prompts } => Ok(prompts),
+            _ => Err(AgentError::InvalidResponse(
+                "Expected PromptsStatus response".to_string(),
             )),
         }
     }

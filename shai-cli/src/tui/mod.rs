@@ -6,6 +6,7 @@ pub mod history;
 pub mod input;
 pub mod perm;
 pub mod perm_alt_screen;
+pub mod prompt_picker;
 pub mod session_picker;
 pub mod shortcuts;
 pub mod statusbar;

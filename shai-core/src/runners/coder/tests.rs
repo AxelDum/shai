@@ -85,6 +85,7 @@ async fn test_coder_brain_think_simple() {
         max_trace_chars: 50000,
         temperature: 0.0,
         is_plan_mode: false,
+        active_prompts: vec![],
         tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
         tool_call_count: 0,
         max_tool_calls: None,

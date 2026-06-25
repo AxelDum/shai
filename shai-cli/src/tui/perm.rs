@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use ansi_to_tui::IntoText;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -102,20 +102,6 @@ impl PermissionWidget<'_> {
             2 => PermissionResponse::Deny,
             _ => PermissionResponse::Deny,
         }
-    }
-
-    pub async fn handle_mouse_event(&mut self, mouse_event: MouseEvent) -> PermissionModalAction {
-        // Handle mouse scroll in the preview area
-        match mouse_event.kind {
-            crossterm::event::MouseEventKind::ScrollUp => {
-                self.scroll_up();
-            }
-            crossterm::event::MouseEventKind::ScrollDown => {
-                self.scroll_down();
-            }
-            _ => {}
-        }
-        PermissionModalAction::Nope
     }
 
     pub async fn handle_key_event(&mut self, key_event: KeyEvent) -> PermissionModalAction {

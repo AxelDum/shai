@@ -125,6 +125,7 @@ pub struct ClaimManager {
     config_file: Option<PathBuf>,
     sudo_mode: bool,
     deny_all: bool,
+    active_prompts: Vec<String>,
 }
 
 impl ClaimManager {
@@ -135,6 +136,7 @@ impl ClaimManager {
             config_file: None,
             sudo_mode: false,
             deny_all: false,
+            active_prompts: Vec::new(),
         }
     }
 
@@ -145,6 +147,7 @@ impl ClaimManager {
             config_file: Some(path),
             sudo_mode: false,
             deny_all: false,
+            active_prompts: Vec::new(),
         }
     }
 
@@ -155,6 +158,7 @@ impl ClaimManager {
             config_file: None,
             sudo_mode: true,
             deny_all: false,
+            active_prompts: Vec::new(),
         }
     }
 
@@ -165,6 +169,7 @@ impl ClaimManager {
             config_file: Some(path),
             sudo_mode: true,
             deny_all: false,
+            active_prompts: Vec::new(),
         }
     }
 
@@ -191,6 +196,16 @@ impl ClaimManager {
     /// Check if plan mode is enabled
     pub fn is_plan_mode(&self) -> bool {
         self.deny_all
+    }
+
+    /// Set active system prompts
+    pub fn set_active_prompts(&mut self, prompts: Vec<String>) {
+        self.active_prompts = prompts;
+    }
+
+    /// Get active system prompts
+    pub fn active_prompts(&self) -> &[String] {
+        &self.active_prompts
     }
 
     /// Check if sudo mode is enabled

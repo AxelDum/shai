@@ -1,9 +1,5 @@
 use crossterm::cursor::MoveTo;
-use crossterm::event::{
-    self, EnableFocusChange, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
-    MouseEvent, MouseEventKind,
-};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -47,12 +43,12 @@ impl AlternateScreenPermissionModal<'_> {
 
     pub async fn run(&mut self) -> io::Result<PermissionModalAction> {
         // Enter alternate screen and enable mouse capture
-        execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout(), EnterAlternateScreen)?;
 
         let result = self.run_modal().await;
 
         // Always clean up - leave alternate screen and disable mouse capture
-        let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(stdout(), LeaveAlternateScreen);
         let _ = stdout().flush();
 
         // Small delay to ensure terminal state is properly restored
@@ -93,9 +89,6 @@ impl AlternateScreenPermissionModal<'_> {
                             return Ok(action);
                         }
                     }
-                    Event::Mouse(mouse_event) => {
-                        let _ = self.widget.handle_mouse_event(mouse_event).await;
-                    }
                     Event::Resize(..) => {
                         // Terminal was resized, redraw on next iteration
                     }
@@ -108,7 +101,7 @@ impl AlternateScreenPermissionModal<'_> {
 
 impl Drop for AlternateScreenPermissionModal<'_> {
     fn drop(&mut self) {
-        let _ = execute!(stdout(), DisableMouseCapture, LeaveAlternateScreen);
+        let _ = execute!(stdout(), LeaveAlternateScreen);
         let _ = stdout().flush();
     }
 }

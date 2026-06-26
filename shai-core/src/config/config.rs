@@ -95,28 +95,50 @@ impl ShaiConfig {
         let shai_config_dir = config_dir.join("shai");
         std::fs::create_dir_all(&shai_config_dir)?;
 
-        Ok(shai_config_dir.join("auth.config"))
+        Ok(shai_config_dir.join("auth.config.json"))
+    }
+
+    fn legacy_config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let config_dir = std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| {
+                dirs::home_dir()
+                    .map(|home| home.join(".config"))
+                    .ok_or("Could not find home directory")
+            })?;
+
+        Ok(config_dir.join("shai").join("auth.config"))
     }
 
     pub fn load() -> Result<ShaiConfig, Box<dyn std::error::Error>> {
         let config_path = Self::config_path()?;
 
-        if !config_path.exists() {
-            return Err("config file does not exist".into());
+        if config_path.exists() {
+            let content_bytes = fs::read(config_path)?;
+            let content_stripped = StripComments::new(&content_bytes[..]);
+            let mut config: ShaiConfig = serde_json::from_reader(content_stripped)?;
+            Self::validate_provider(&mut config);
+            return Ok(config);
         }
 
-        let content_bytes = fs::read(config_path)?;
-        let content_stripped = StripComments::new(&content_bytes[..]);
-        let mut config: ShaiConfig = serde_json::from_reader(content_stripped)?;
-
-        // Validate selected_provider index
-        if config.providers.is_empty() {
-            config.selected_provider = 0;
-        } else if config.selected_provider >= config.providers.len() {
-            config.selected_provider = 0; // Reset to first provider if index is invalid
+        let legacy_path = Self::legacy_config_path()?;
+        if legacy_path.exists() {
+            let content_bytes = fs::read(legacy_path)?;
+            let content_stripped = StripComments::new(&content_bytes[..]);
+            let mut config: ShaiConfig = serde_json::from_reader(content_stripped)?;
+            Self::validate_provider(&mut config);
+            return Ok(config);
         }
 
-        Ok(config)
+        Err("config file does not exist".into())
+    }
+
+    fn validate_provider(&mut self) {
+        if self.providers.is_empty() {
+            self.selected_provider = 0;
+        } else if self.selected_provider >= self.providers.len() {
+            self.selected_provider = 0;
+        }
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {

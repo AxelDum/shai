@@ -239,6 +239,12 @@ impl AgentConfig {
     /// Get the path for a specific agent config file
     pub fn agent_config_path(agent_name: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let agents_dir = Self::agents_dir()?;
+        Ok(agents_dir.join(format!("{}.config.json", agent_name)))
+    }
+
+    /// Get the legacy path for a specific agent config file
+    fn legacy_agent_config_path(agent_name: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let agents_dir = Self::agents_dir()?;
         Ok(agents_dir.join(format!("{}.config", agent_name)))
     }
 
@@ -246,14 +252,22 @@ impl AgentConfig {
     pub fn load(agent_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = Self::agent_config_path(agent_name)?;
 
-        if !config_path.exists() {
-            return Err(format!("Agent config '{}' does not exist", agent_name).into());
+        if config_path.exists() {
+            let content_bytes = std::fs::read(config_path)?;
+            let content_stripped = StripComments::new(&content_bytes[..]);
+            let config: AgentConfig = serde_json::from_reader(content_stripped)?;
+            return Ok(config);
         }
 
-        let content_bytes = std::fs::read(config_path)?;
-        let content_stripped = StripComments::new(&content_bytes[..]);
-        let config: AgentConfig = serde_json::from_reader(content_stripped)?;
-        Ok(config)
+        let legacy_path = Self::legacy_agent_config_path(agent_name)?;
+        if legacy_path.exists() {
+            let content_bytes = std::fs::read(legacy_path)?;
+            let content_stripped = StripComments::new(&content_bytes[..]);
+            let config: AgentConfig = serde_json::from_reader(content_stripped)?;
+            return Ok(config);
+        }
+
+        Err(format!("Agent config '{}' does not exist", agent_name).into())
     }
 
     /// Save the agent config to file
@@ -274,39 +288,48 @@ impl AgentConfig {
                 let entry = entry?;
                 let path = entry.path();
 
-                if let Some(extension) = path.extension() {
-                    if extension == "config" {
-                        if let Some(filename) = path.file_stem() {
-                            if let Some(agent_name) = filename.to_str() {
-                                agents.push(agent_name.to_string());
-                            }
-                        }
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if let Some(agent_name) = filename
+                        .strip_suffix(".config.json")
+                        .or_else(|| filename.strip_suffix(".config"))
+                    {
+                        agents.push(agent_name.to_string());
                     }
                 }
             }
         }
 
         agents.sort();
+        agents.dedup();
         Ok(agents)
     }
 
     /// Check if an agent config exists
     pub fn exists(agent_name: &str) -> bool {
         Self::agent_config_path(agent_name)
-            .map(|path| path.exists())
+            .map(|p| p.exists())
             .unwrap_or(false)
+            || Self::legacy_agent_config_path(agent_name)
+                .map(|p| p.exists())
+                .unwrap_or(false)
     }
 
     /// Delete an agent config
     pub fn delete(agent_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = Self::agent_config_path(agent_name)?;
+        let legacy_path = Self::legacy_agent_config_path(agent_name)?;
 
-        if !config_path.exists() {
-            return Err(format!("Agent config '{}' does not exist", agent_name).into());
+        if config_path.exists() {
+            std::fs::remove_file(config_path)?;
+            return Ok(());
         }
 
-        std::fs::remove_file(config_path)?;
-        Ok(())
+        if legacy_path.exists() {
+            std::fs::remove_file(legacy_path)?;
+            return Ok(());
+        }
+
+        Err(format!("Agent config '{}' does not exist", agent_name).into())
     }
 
     /// Check if a builtin tool is enabled

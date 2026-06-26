@@ -70,7 +70,11 @@ impl SleepingThinker {
 
 #[async_trait]
 impl Brain for SleepingThinker {
-    async fn next_step(&mut self, _: ThinkerContext, _: ToolBudgetRef) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         if !self.called_tool {
             self.called_tool = true;
             // On first call, use the sleeping tool
@@ -115,7 +119,11 @@ impl PausableThinker {
 
 #[async_trait]
 impl Brain for PausableThinker {
-    async fn next_step(&mut self, _: ThinkerContext, _: ToolBudgetRef) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         self.call_count += 1;
 
         match self.call_count {
@@ -381,7 +389,11 @@ impl RealToolsThinker {
 
 #[async_trait]
 impl Brain for RealToolsThinker {
-    async fn next_step(&mut self, _: ThinkerContext, _: ToolBudgetRef) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         self.step += 1;
 
         match self.step {

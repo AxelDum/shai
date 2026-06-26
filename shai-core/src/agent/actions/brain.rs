@@ -13,17 +13,17 @@ impl AgentCore {
     pub async fn spawn_next_step(&mut self) {
         let cancellation_token = CancellationToken::new();
         let cancel_token_clone = cancellation_token.clone();
-        let trace = self.trace.clone();
-        let tx_clone = self.internal_tx.clone();
-        let available_tools = self.available_tools.clone();
+        let trace = self.tool_ctx.trace.clone();
+        let tx_clone = self.tool_ctx.internal_tx.clone();
+        let available_tools = self.tool_ctx.available_tools.clone();
         let method = self.method.clone();
-        let max_trace_chars = self.compaction_config.max_trace_chars;
+        let max_trace_chars = self.tool_ctx.compaction_config.max_trace_chars;
         let temperature = *self.temperature.read().await;
-        let is_plan_mode = self.permissions.read().await.is_plan_mode();
-        let active_prompts = self.permissions.read().await.active_prompts().to_vec();
-        let tool_call_count = *self.tool_budget.count.read().await;
-        let max_tool_calls = self.tool_budget.max_calls;
-        let soft_tool_calls = self.tool_budget.soft_limit;
+        let is_plan_mode = self.tool_ctx.claims.read().await.is_plan_mode();
+        let active_prompts = self.tool_ctx.claims.read().await.active_prompts().to_vec();
+        let tool_call_count = *self.tool_ctx.tool_budget.count.read().await;
+        let max_tool_calls = self.tool_ctx.tool_budget.max_calls;
+        let soft_tool_calls = self.tool_ctx.tool_budget.soft_limit;
         let budget = ToolBudgetRef {
             count: tool_call_count,
             max_calls: max_tool_calls,
@@ -37,7 +37,7 @@ impl AgentCore {
             temperature,
             is_plan_mode,
             active_prompts,
-            tool_call_metadata: self.tool_cache.tool_call_metadata.clone(),
+            tool_call_metadata: self.tool_ctx.tool_cache.tool_call_metadata.clone(),
         };
         let brain = self.brain.clone();
 
@@ -94,7 +94,7 @@ impl AgentCore {
 
         // Add the message to trace
         info!(target: "agent::think", reasoning_content = ?reasoning_content, content = ?content);
-        let trace = self.trace.clone();
+        let trace = self.tool_ctx.trace.clone();
         trace.write().await.push(message.clone());
 
         // Emit event to external consumers
@@ -120,8 +120,8 @@ impl AgentCore {
         let tool_calls_from_brain = tool_calls.unwrap_or(vec![]);
         if !tool_calls_from_brain.is_empty() {
             // Check max tool calls per turn limit
-            if let Some(max_tool_calls) = self.tool_budget.max_calls {
-                let mut count = self.tool_budget.count.write().await;
+            if let Some(max_tool_calls) = self.tool_ctx.tool_budget.max_calls {
+                let mut count = self.tool_ctx.tool_budget.count.write().await;
                 if *count >= max_tool_calls {
                     // Drop the guard before calling set_state
                     drop(count);
@@ -131,7 +131,7 @@ impl AgentCore {
                         max_tool_calls
                     );
                     for tc in &tool_calls_from_brain {
-                        self.trace.write().await.push(ChatMessage::Tool {
+                        self.tool_ctx.trace.write().await.push(ChatMessage::Tool {
                             tool_call_id: tc.id.clone(),
                             content: ChatMessageContent::Text(wrap_up.clone()),
                         });

@@ -8,7 +8,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
     prelude::CrosstermBackend,
     style::{Style, Stylize},
     text::{Line, Span},
@@ -18,6 +18,7 @@ use ratatui::{
 use shai_core::tools::prompts::PromptInfo;
 use std::io::{self, stdout, Write};
 
+use super::modal::run_alternate_screen;
 use super::theme::ThemePalette;
 
 /// Result of the prompt picker modal.
@@ -90,7 +91,7 @@ impl PromptPicker {
         }
     }
 
-    pub fn draw(&self, frame: &mut Frame) {
+    pub fn render(&mut self, frame: &mut Frame, _area: Rect) {
         let area = frame.area();
 
         let chunks = Layout::vertical([
@@ -173,77 +174,58 @@ impl PromptPicker {
     }
 
     pub async fn run(&mut self) -> io::Result<PromptPickerAction> {
-        execute!(stdout(), EnterAlternateScreen)?;
+        run_alternate_screen(self).await
+    }
+}
 
-        let result = self.run_inner().await;
+impl crate::tui::modal::Modal for PromptPicker {
+    type Output = PromptPickerAction;
 
-        let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = stdout().flush();
-
-        result
+    fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        self.render(frame, area);
     }
 
-    async fn run_inner(&mut self) -> io::Result<PromptPickerAction> {
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        let mut reader = event::EventStream::new();
-
-        loop {
-            terminal.draw(|frame| {
-                self.draw(frame);
-            })?;
-
-            if let Some(Ok(event)) = reader.next().await {
-                match event {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        // Ctrl+C cancels
-                        if key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(KeyModifiers::CONTROL)
-                        {
-                            return Ok(PromptPickerAction::Cancelled);
-                        }
-                        match key.code {
-                            KeyCode::Up => {
-                                if self.state.selected > 0 {
-                                    self.state.selected -= 1;
-                                }
-                            }
-                            KeyCode::Down => {
-                                if self.state.selected + 1 < self.state.prompts.len() {
-                                    self.state.selected += 1;
-                                }
-                            }
-                            KeyCode::PageUp => {
-                                self.state.selected = self.state.selected.saturating_sub(10);
-                            }
-                            KeyCode::PageDown => {
-                                self.state.selected = (self.state.selected + 10)
-                                    .min(self.state.prompts.len().saturating_sub(1));
-                            }
-                            KeyCode::Home => {
-                                self.state.selected = 0;
-                            }
-                            KeyCode::End => {
-                                self.state.selected = self.state.prompts.len().saturating_sub(1);
-                            }
-                            KeyCode::Char(' ') => {
-                                if !self.state.prompts.is_empty() {
-                                    self.state.toggle(self.state.selected);
-                                }
-                            }
-                            KeyCode::Enter => {
-                                return Ok(PromptPickerAction::Selected(
-                                    self.state.selected_names(),
-                                ));
-                            }
-                            KeyCode::Esc => {
-                                return Ok(PromptPickerAction::Cancelled);
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
+    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Option<Self::Output> {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Some(PromptPickerAction::Cancelled);
+        }
+        match key.code {
+            KeyCode::Up => {
+                if self.state.selected > 0 {
+                    self.state.selected -= 1;
                 }
             }
+            KeyCode::Down => {
+                if self.state.selected + 1 < self.state.prompts.len() {
+                    self.state.selected += 1;
+                }
+            }
+            KeyCode::PageUp => {
+                self.state.selected = self.state.selected.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                self.state.selected =
+                    (self.state.selected + 10).min(self.state.prompts.len().saturating_sub(1));
+            }
+            KeyCode::Home => {
+                self.state.selected = 0;
+            }
+            KeyCode::End => {
+                self.state.selected = self.state.prompts.len().saturating_sub(1);
+            }
+            KeyCode::Char(' ') => {
+                if !self.state.prompts.is_empty() {
+                    self.state.toggle(self.state.selected);
+                }
+            }
+            KeyCode::Enter => {
+                return Some(PromptPickerAction::Selected(self.state.selected_names()));
+            }
+            KeyCode::Esc => {
+                return Some(PromptPickerAction::Cancelled);
+            }
+            _ => {}
         }
+        None
     }
 }

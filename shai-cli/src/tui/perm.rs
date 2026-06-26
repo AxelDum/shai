@@ -104,7 +104,7 @@ impl PermissionWidget<'_> {
         }
     }
 
-    pub async fn handle_key_event(&mut self, key_event: KeyEvent) -> PermissionModalAction {
+    pub fn handle_key_event(&mut self, key_event: KeyEvent) -> PermissionModalAction {
         match key_event.code {
             KeyCode::Up => {
                 self.move_up();

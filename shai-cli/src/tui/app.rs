@@ -36,13 +36,14 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 use tracing::{debug, warn};
 
+use super::command::CommandRegistry;
 use super::history::ConversationHistory;
 use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
-use super::session_picker::{SessionPicker, SessionPickerAction};
-use super::statusbar::StatusBar;
 use super::perm_manager::PermissionManager;
 use super::session_manager::SessionManager;
+use super::session_picker::{SessionPicker, SessionPickerAction};
+use super::statusbar::StatusBar;
 use super::theme::Theme;
 use super::token_counter::TokenCounter;
 use super::tool_tracker::ToolTracker;
@@ -71,8 +72,8 @@ pub struct App<'a> {
     pub(crate) state: AppModalState<'a>,
     pub(crate) formatter: PrettyFormatter, // streaming log formatter
     pub(crate) tool_tracker: ToolTracker,
-    pub(crate) input: InputArea<'a>,       // input text
-    pub(crate) commands: std::collections::HashMap<(String, String), Vec<String>>,
+    pub(crate) input: InputArea<'a>, // input text
+    pub(crate) command_registry: CommandRegistry,
     pub(crate) exit: bool,
     pub(crate) permission_manager: PermissionManager,
 
@@ -358,7 +359,7 @@ impl App<'_> {
             formatter: PrettyFormatter::new(),
             state: AppModalState::InputShown,
             input: InputArea::new(palette),
-            commands: Self::list_command(),
+            command_registry: CommandRegistry::new(),
             exit: false,
             tool_tracker: ToolTracker::new(),
             permission_manager: PermissionManager::new(),
@@ -596,7 +597,6 @@ impl App<'_> {
                 self.session_picker = None;
             }
             None => {}
-
         }
         Ok(())
     }
@@ -666,7 +666,8 @@ impl App<'_> {
         {
             if !self.session_manager.last_assistant_response().is_empty() {
                 if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
-                    let _ = ctx.set_contents(self.session_manager.last_assistant_response().to_string());
+                    let _ = ctx
+                        .set_contents(self.session_manager.last_assistant_response().to_string());
                     self.notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {
@@ -706,8 +707,7 @@ impl App<'_> {
         {
             if let Some(output) = self.tool_tracker.last_output().map(|s| s.to_string()) {
                 let file_path = self.tool_tracker.last_file_path().map(|s| s.to_string());
-                let mut viewer =
-                    AlternateScreenViewer::new(output, file_path);
+                let mut viewer = AlternateScreenViewer::new(output, file_path);
                 let _ = viewer.run().await;
             }
             return Ok(());
@@ -719,8 +719,7 @@ impl App<'_> {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            let sessions = shai_core::session::SessionPersist::list_sessions()
-                .unwrap_or_default();
+            let sessions = shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
             self.session_picker = Some(SessionPicker::new(sessions, self.theme.palette()));
             return Ok(());
         }
@@ -757,7 +756,7 @@ impl App<'_> {
                 self.handle_user_action(action).await?;
             }
             AppModalState::PermissionModal { widget } => {
-                let action = widget.handle_key_event(key_event).await;
+                let action = widget.handle_key_event(key_event);
                 self.handle_permission_action(action).await?;
             }
         }
@@ -868,7 +867,7 @@ impl App<'_> {
                 }
             }
             UserAction::UserAppCommand { command } => {
-                let _ = self.handle_app_command(&command).await;
+                let _ = CommandRegistry::dispatch(&command, self).await;
             }
         }
         Ok(())
@@ -905,10 +904,7 @@ impl App<'_> {
                         Layout::vertical(vec![Constraint::Length(1); self.tool_tracker.len()])
                             .split(tools_area);
                     for ((tool_id, tc), &area) in self.tool_tracker.iter().zip(&*layout) {
-                        let elapsed = self
-                            .tool_tracker
-                            .elapsed(tool_id)
-                            .unwrap_or_default();
+                        let elapsed = self.tool_tracker.elapsed(tool_id).unwrap_or_default();
                         let secs = elapsed.as_secs();
                         let millis = elapsed.subsec_millis() / 10;
                         let tool_str = self.formatter.format_tool_running(tc);

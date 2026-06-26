@@ -31,8 +31,9 @@ impl ToolTracker {
         self.running.remove(&call.tool_call_id);
         self.start_times.remove(&call.tool_call_id);
         if let ToolResult::Success { output, .. } = result {
-            let file_path = PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name)
-                .map(|(_, path)| path);
+            let file_path =
+                PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name)
+                    .map(|(_, path)| path);
             self.last_output = Some(output.clone());
             self.last_file_path = file_path;
         }

@@ -6,11 +6,15 @@ pub mod history;
 pub mod input;
 pub mod perm;
 pub mod perm_alt_screen;
+pub mod perm_manager;
 pub mod prompt_picker;
+pub mod session_manager;
 pub mod session_picker;
 pub mod shortcuts;
 pub mod statusbar;
 pub mod theme;
+pub mod token_counter;
+pub mod tool_tracker;
 pub mod viewer;
 
 pub use app::App;

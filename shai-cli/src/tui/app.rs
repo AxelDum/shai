@@ -3,7 +3,6 @@
 #![allow(clippy::collapsible_match)]
 use std::io::{self};
 use std::sync::Arc;
-use std::time::Instant;
 
 use ansi_to_tui::IntoText;
 use chrono::Utc;
@@ -29,9 +28,8 @@ use shai_core::agent::{Agent, AgentController, AgentEvent, PublicAgentState};
 use shai_core::config::agent::AgentConfig;
 use shai_core::config::config::ShaiConfig;
 use shai_core::runners::coder::coder::coder;
-use shai_core::tools::{ToolCall, ToolResult};
+use shai_core::tools::ToolResult;
 use shai_llm::ToolCallMethod;
-use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -43,7 +41,11 @@ use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
 use super::session_picker::{SessionPicker, SessionPickerAction};
 use super::statusbar::StatusBar;
+use super::perm_manager::PermissionManager;
+use super::session_manager::SessionManager;
 use super::theme::Theme;
+use super::token_counter::TokenCounter;
+use super::tool_tracker::ToolTracker;
 use super::viewer::AlternateScreenViewer;
 use crate::tui::input::InputArea;
 use crate::tui::perm::PermissionWidget;
@@ -68,16 +70,13 @@ pub struct App<'a> {
 
     pub(crate) state: AppModalState<'a>,
     pub(crate) formatter: PrettyFormatter, // streaming log formatter
-    pub(crate) running_tools: HashMap<String, ToolCall>, // tool_call_id -> ToolCall
-    pub(crate) tool_start_times: HashMap<String, Instant>, // tool_call_id -> start time
+    pub(crate) tool_tracker: ToolTracker,
     pub(crate) input: InputArea<'a>,       // input text
-    pub(crate) commands: HashMap<(String, String), Vec<String>>,
+    pub(crate) commands: std::collections::HashMap<(String, String), Vec<String>>,
     pub(crate) exit: bool,
-    pub(crate) permission_queue: VecDeque<(String, PermissionRequest)>, // (request_id, request)
+    pub(crate) permission_manager: PermissionManager,
 
-    pub(crate) total_input_tokens: u32,
-    pub(crate) total_output_tokens: u32,
-    pub(crate) total_cached_tokens: u32,
+    pub(crate) token_counter: TokenCounter,
 
     pub(crate) theme: Theme, // UI theme (dark/light)
     pub(crate) status_bar: StatusBar,
@@ -89,12 +88,7 @@ pub struct App<'a> {
     pub(crate) agent_name: Option<String>,
 
     // Session persistence
-    pub(crate) session_id: String,
-    pub(crate) last_assistant_response: String,
-
-    // Last tool result for expandable viewer
-    pub(crate) last_tool_output: Option<String>,
-    pub(crate) last_tool_file_path: Option<String>,
+    pub(crate) session_manager: SessionManager,
 
     // Session picker modal
     pub(crate) session_picker: Option<SessionPicker>,
@@ -229,7 +223,7 @@ impl App<'_> {
                 io::Error::other(format!("Failed to load session {}: {}", session_id, e))
             })?;
 
-        self.session_id = session.session_id.clone();
+        self.session_manager.set_session_id(&session.session_id);
 
         // Send the trace to the agent (without starting to think)
         if let Some(ref agent) = self.agent {
@@ -255,7 +249,7 @@ impl App<'_> {
             if matches!(new_status, PublicAgentState::Paused) {
                 if let Some(ref agent_ref) = self.agent {
                     if let Ok(trace) = agent_ref.controller.get_trace().await {
-                        let sid = self.session_id.clone();
+                        let sid = self.session_manager.session_id().to_string();
                         tokio::spawn(async move {
                             if let Err(e) =
                                 shai_core::session::SessionPersist::save_session(&sid, trace)
@@ -270,23 +264,10 @@ impl App<'_> {
 
         // updated inprogress list
         if let AgentEvent::ToolCallStarted { call, .. } = &event {
-            self.running_tools
-                .insert(call.tool_call_id.clone(), call.clone());
-            self.tool_start_times
-                .insert(call.tool_call_id.clone(), Instant::now());
+            self.tool_tracker.start_tool(call.clone());
         }
         if let AgentEvent::ToolCallCompleted { call, result, .. } = &event {
-            self.running_tools.remove(&call.tool_call_id);
-            self.tool_start_times.remove(&call.tool_call_id);
-
-            // Store tool result for expandable viewer
-            if let ToolResult::Success { output, .. } = result {
-                let file_path =
-                    PrettyFormatter::extract_primary_param(&call.parameters, &call.tool_name)
-                        .map(|(_, path)| path);
-                self.last_tool_output = Some(output.clone());
-                self.last_tool_file_path = file_path;
-            }
+            self.tool_tracker.complete_tool(call, result);
         }
 
         // Format and display event
@@ -299,7 +280,7 @@ impl App<'_> {
             {
                 if let Some(ChatMessageContent::Text(text)) = content {
                     if !text.trim().is_empty() {
-                        self.last_assistant_response = text.clone();
+                        self.session_manager.set_last_assistant_response(text);
                     }
                 }
             }
@@ -315,8 +296,8 @@ impl App<'_> {
             request,
         } = &event
         {
-            self.permission_queue
-                .push_back((request_id.clone(), request.clone()));
+            self.permission_manager
+                .push(request_id.clone(), request.clone());
         }
 
         // Handle token usage tracking
@@ -326,11 +307,12 @@ impl App<'_> {
             cached_tokens,
         } = &event
         {
-            self.total_input_tokens += input_tokens;
-            self.total_output_tokens += output_tokens;
-            self.total_cached_tokens += cached_tokens;
-            self.status_bar
-                .set_tokens(self.total_input_tokens, self.total_output_tokens);
+            self.token_counter
+                .add(*input_tokens, *output_tokens, *cached_tokens);
+            self.status_bar.set_tokens(
+                self.token_counter.input_tokens(),
+                self.token_counter.output_tokens(),
+            );
         }
 
         // Handle error events - display inline in red
@@ -378,22 +360,16 @@ impl App<'_> {
             input: InputArea::new(palette),
             commands: Self::list_command(),
             exit: false,
-            running_tools: HashMap::new(),
-            tool_start_times: HashMap::new(),
-            permission_queue: VecDeque::new(),
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cached_tokens: 0,
+            tool_tracker: ToolTracker::new(),
+            permission_manager: PermissionManager::new(),
+            token_counter: TokenCounter::new(),
             theme,
             status_bar: StatusBar::new(theme),
             history: ConversationHistory::new(),
             agent_model: String::new(),
             agent_provider: String::new(),
             agent_name: None,
-            session_id: uuid::Uuid::new_v4().to_string(),
-            last_assistant_response: String::new(),
-            last_tool_output: None,
-            last_tool_file_path: None,
+            session_manager: SessionManager::new(),
             session_picker: None,
         }
     }
@@ -602,7 +578,7 @@ impl App<'_> {
                         }
 
                         // Render the trace into the TUI
-                        self.session_id = session_id.clone();
+                        self.session_manager.set_session_id(&session_id);
                         self.render_restored_trace(&trace);
 
                         self.input.alert_msg(
@@ -688,9 +664,9 @@ impl App<'_> {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            if !self.last_assistant_response.is_empty() {
+            if !self.session_manager.last_assistant_response().is_empty() {
                 if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
-                    let _ = ctx.set_contents(self.last_assistant_response.clone());
+                    let _ = ctx.set_contents(self.session_manager.last_assistant_response().to_string());
                     self.notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {
@@ -728,9 +704,10 @@ impl App<'_> {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            if let Some(output) = self.last_tool_output.clone() {
+            if let Some(output) = self.tool_tracker.last_output().map(|s| s.to_string()) {
+                let file_path = self.tool_tracker.last_file_path().map(|s| s.to_string());
                 let mut viewer =
-                    AlternateScreenViewer::new(output, self.last_tool_file_path.clone());
+                    AlternateScreenViewer::new(output, file_path);
                 let _ = viewer.run().await;
             }
             return Ok(());
@@ -813,7 +790,7 @@ impl App<'_> {
                 }
 
                 // Remove the completed permission from queue
-                self.permission_queue.pop_front();
+                self.permission_manager.pop();
 
                 // Go back to InputShown so next check_permission_queue will show next permission
                 self.state = AppModalState::InputShown;
@@ -825,13 +802,13 @@ impl App<'_> {
 
     async fn check_permission_queue(&mut self) -> io::Result<()> {
         match &self.state {
-            AppModalState::InputShown if !self.permission_queue.is_empty() => {
-                let (request_id, request) = self.permission_queue.front().unwrap();
+            AppModalState::InputShown if !self.permission_manager.is_empty() => {
+                let (request_id, request) = self.permission_manager.front().unwrap();
                 let palette = self.theme.palette();
                 let widget = PermissionWidget::new(
                     request_id.clone(),
                     request.clone(),
-                    self.permission_queue.len(),
+                    self.permission_manager.len(),
                     palette,
                 );
 
@@ -863,7 +840,7 @@ impl App<'_> {
                     self.state = AppModalState::PermissionModal { widget };
                 }
             }
-            AppModalState::PermissionModal { .. } if self.permission_queue.is_empty() => {
+            AppModalState::PermissionModal { .. } if self.permission_manager.is_empty() => {
                 self.state = AppModalState::InputShown;
             }
             _ => {}
@@ -904,7 +881,7 @@ impl App<'_> {
         }
         .max(5);
 
-        let running_tools_height = self.running_tools.len() as u16;
+        let running_tools_height = self.tool_tracker.len() as u16;
 
         if let Some(ref mut terminal) = self.terminal {
             terminal.draw(|frame| {
@@ -923,15 +900,14 @@ impl App<'_> {
                 self.history.draw(frame, history_area);
 
                 // draw running tool with duration
-                if !self.running_tools.is_empty() {
+                if !self.tool_tracker.is_empty() {
                     let layout: std::rc::Rc<[Rect]> =
-                        Layout::vertical(vec![Constraint::Length(1); self.running_tools.len()])
+                        Layout::vertical(vec![Constraint::Length(1); self.tool_tracker.len()])
                             .split(tools_area);
-                    for ((tool_id, tc), &area) in self.running_tools.iter().zip(&*layout) {
+                    for ((tool_id, tc), &area) in self.tool_tracker.iter().zip(&*layout) {
                         let elapsed = self
-                            .tool_start_times
-                            .get(tool_id)
-                            .map(|t| t.elapsed())
+                            .tool_tracker
+                            .elapsed(tool_id)
                             .unwrap_or_default();
                         let secs = elapsed.as_secs();
                         let millis = elapsed.subsec_millis() / 10;

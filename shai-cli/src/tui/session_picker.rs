@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: OVH SAS
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
-};
-use futures::StreamExt;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    layout::{Constraint, Layout},
-    prelude::CrosstermBackend,
+    layout::{Constraint, Layout, Rect},
     style::{Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Padding},
-    Frame, Terminal,
+    Frame,
 };
 use shai_core::session::SessionData;
-use std::io::{self, stdout, Write};
 
 use super::theme::ThemePalette;
 
@@ -28,38 +21,72 @@ pub enum SessionPickerAction {
     Cancelled,
 }
 
-struct SessionPickerState {
+pub struct SessionPicker {
     sessions: Vec<SessionData>,
     selected: usize,
     scroll_offset: usize,
-}
-
-impl SessionPickerState {
-    fn new(sessions: Vec<SessionData>) -> Self {
-        Self {
-            sessions,
-            selected: 0,
-            scroll_offset: 0,
-        }
-    }
-}
-
-pub struct SessionPicker {
-    state: SessionPickerState,
     palette: ThemePalette,
 }
 
 impl SessionPicker {
     pub fn new(sessions: Vec<SessionData>, palette: ThemePalette) -> Self {
         Self {
-            state: SessionPickerState::new(sessions),
+            sessions,
+            selected: 0,
+            scroll_offset: 0,
             palette,
         }
     }
 
-    pub fn draw(&self, frame: &mut Frame) {
-        let area = frame.area();
+    pub fn is_empty(&self) -> bool {
+        self.sessions.is_empty()
+    }
 
+    /// Handle a key event. Returns `Some(SessionPickerAction)` if the picker
+    /// should close, or `None` to keep it open.
+    pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<SessionPickerAction> {
+        if key.kind != KeyEventKind::Press {
+            return None;
+        }
+
+        match key.code {
+            KeyCode::Up => {
+                if self.selected > 0 {
+                    self.selected -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if self.selected + 1 < self.sessions.len() {
+                    self.selected += 1;
+                }
+            }
+            KeyCode::PageUp => {
+                self.selected = self.selected.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                self.selected = (self.selected + 10).min(self.sessions.len().saturating_sub(1));
+            }
+            KeyCode::Home => {
+                self.selected = 0;
+            }
+            KeyCode::End => {
+                self.selected = self.sessions.len().saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                if !self.sessions.is_empty() {
+                    return Some(SessionPickerAction::Selected(self.selected));
+                }
+            }
+            KeyCode::Esc => {
+                return Some(SessionPickerAction::Cancelled);
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::vertical([
             Constraint::Length(1), // title
             Constraint::Min(1),    // list
@@ -75,7 +102,7 @@ impl SessionPicker {
         )]);
         frame.render_widget(title, chunks[0]);
 
-        if self.state.sessions.is_empty() {
+        if self.sessions.is_empty() {
             let empty = Line::from(Span::styled(
                 " No saved sessions found.",
                 Style::default().fg(self.palette.placeholder),
@@ -84,30 +111,28 @@ impl SessionPicker {
             return;
         }
 
-        let max_visible = area.height.saturating_sub(2) as usize;
-        let selected = self.state.selected;
+        // Account for: title (1) + top border (1) + bottom border (1) = 3
+        let max_visible = area.height.saturating_sub(3) as usize;
+        let max_visible = max_visible.max(1);
 
         // Adjust scroll_offset so the selected item is always visible
-        let scroll_offset = if self.state.sessions.len() <= max_visible {
-            0
-        } else if selected < self.state.scroll_offset {
-            selected
-        } else if selected >= self.state.scroll_offset + max_visible {
-            selected - max_visible + 1
-        } else {
-            self.state.scroll_offset
-        };
+        if self.sessions.len() <= max_visible {
+            self.scroll_offset = 0;
+        } else if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + max_visible {
+            self.scroll_offset = self.selected - max_visible + 1;
+        }
 
-        let visible_count = self.state.sessions.len().min(max_visible);
+        let visible_count = self.sessions.len().min(max_visible);
         let items: Vec<ListItem> = self
-            .state
             .sessions
             .iter()
-            .skip(scroll_offset)
+            .skip(self.scroll_offset)
             .take(visible_count)
             .enumerate()
             .map(|(i, session)| {
-                let idx = scroll_offset + i;
+                let idx = self.scroll_offset + i;
                 let name = session.name.as_deref().unwrap_or("unnamed");
                 let id_short = &session.session_id[..8.min(session.session_id.len())];
 
@@ -126,7 +151,7 @@ impl SessionPicker {
                     ),
                 ]);
 
-                if idx == self.state.selected {
+                if idx == self.selected {
                     ListItem::new(line)
                         .style(Style::default().bg(self.palette.suggestion_selected_bg))
                 } else {
@@ -144,75 +169,5 @@ impl SessionPicker {
         );
 
         frame.render_widget(list, chunks[1]);
-    }
-
-    pub async fn run(&mut self) -> io::Result<SessionPickerAction> {
-        execute!(stdout(), EnterAlternateScreen)?;
-
-        let result = self.run_inner().await;
-
-        let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = stdout().flush();
-
-        result
-    }
-
-    async fn run_inner(&mut self) -> io::Result<SessionPickerAction> {
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        let mut reader = event::EventStream::new();
-
-        loop {
-            terminal.draw(|frame| {
-                self.draw(frame);
-            })?;
-
-            if let Some(Ok(event)) = reader.next().await {
-                match event {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        // Ctrl+C cancels
-                        if key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(KeyModifiers::CONTROL)
-                        {
-                            return Ok(SessionPickerAction::Cancelled);
-                        }
-                        match key.code {
-                            KeyCode::Up => {
-                                if self.state.selected > 0 {
-                                    self.state.selected -= 1;
-                                }
-                            }
-                            KeyCode::Down => {
-                                if self.state.selected + 1 < self.state.sessions.len() {
-                                    self.state.selected += 1;
-                                }
-                            }
-                            KeyCode::PageUp => {
-                                self.state.selected = self.state.selected.saturating_sub(10);
-                            }
-                            KeyCode::PageDown => {
-                                self.state.selected = (self.state.selected + 10)
-                                    .min(self.state.sessions.len().saturating_sub(1));
-                            }
-                            KeyCode::Home => {
-                                self.state.selected = 0;
-                            }
-                            KeyCode::End => {
-                                self.state.selected = self.state.sessions.len().saturating_sub(1);
-                            }
-                            KeyCode::Enter => {
-                                if !self.state.sessions.is_empty() {
-                                    return Ok(SessionPickerAction::Selected(self.state.selected));
-                                }
-                            }
-                            KeyCode::Esc => {
-                                return Ok(SessionPickerAction::Cancelled);
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
     }
 }

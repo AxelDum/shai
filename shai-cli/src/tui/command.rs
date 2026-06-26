@@ -265,14 +265,13 @@ impl App<'_> {
                                 self.notify("Invalid session number", Duration::from_secs(2));
                             }
                         } else {
-                            // Open the session picker
-                            let mut picker =
-                                SessionPicker::new(sessions.clone(), self.theme.palette());
-                            if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
-                                if let Some(session) = sessions.get(idx) {
-                                    self.restore_session(&session.session_id).await?;
-                                }
-                            }
+                            // Open the session picker modal
+                            let palette = self.theme.palette();
+                            self.session_picker =
+                                Some(crate::tui::session_picker::SessionPicker::new(
+                                    sessions.clone(),
+                                    palette,
+                                ));
                         }
                     }
                     Ok(_) => {

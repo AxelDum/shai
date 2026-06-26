@@ -69,7 +69,9 @@ impl SessionPicker {
         // Title
         let title = Line::from(vec![Span::styled(
             " Restore Session ",
-            Style::default().fg(self.palette.suggestion_selected_fg).bold(),
+            Style::default()
+                .fg(self.palette.suggestion_selected_fg)
+                .bold(),
         )]);
         frame.render_widget(title, chunks[0]);
 
@@ -125,21 +127,21 @@ impl SessionPicker {
                 ]);
 
                 if idx == self.state.selected {
-                    ListItem::new(line).style(Style::default().bg(self.palette.suggestion_selected_bg))
+                    ListItem::new(line)
+                        .style(Style::default().bg(self.palette.suggestion_selected_bg))
                 } else {
                     ListItem::new(line)
                 }
             })
             .collect();
 
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_set(ratatui::symbols::border::ROUNDED)
-                    .border_style(Style::default().fg(self.palette.border))
-                    .padding(Padding::new(1, 1, 0, 0)),
-            );
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_set(ratatui::symbols::border::ROUNDED)
+                .border_style(Style::default().fg(self.palette.border))
+                .padding(Padding::new(1, 1, 0, 0)),
+        );
 
         frame.render_widget(list, chunks[1]);
     }

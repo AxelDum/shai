@@ -185,10 +185,7 @@ impl StatusBar {
         let spaces = padding.saturating_sub(left_len + right_len);
         let spacer = " ".repeat(spaces);
 
-        spans.push(Span::styled(
-            spacer,
-            Style::default().bg(Color::DarkGray),
-        ));
+        spans.push(Span::styled(spacer, Style::default().bg(Color::DarkGray)));
         spans.push(Span::styled(
             token_str,
             Style::default().fg(Color::White).bg(Color::DarkGray),

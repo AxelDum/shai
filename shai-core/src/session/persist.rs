@@ -21,15 +21,15 @@ pub struct SessionData {
 }
 
 const ADJECTIVES: &[&str] = &[
-    "swift", "clever", "bright", "calm", "eager", "fancy", "gentle", "happy",
-    "jolly", "lively", "merry", "noble", "proud", "silly", "witty", "brave",
-    "cosmic", "dazzling", "frosty", "golden", "lucky", "magic", "noble", "vivid",
+    "swift", "clever", "bright", "calm", "eager", "fancy", "gentle", "happy", "jolly", "lively",
+    "merry", "noble", "proud", "silly", "witty", "brave", "cosmic", "dazzling", "frosty", "golden",
+    "lucky", "magic", "noble", "vivid",
 ];
 
 const NOUNS: &[&str] = &[
-    "otter", "falcon", "panda", "tiger", "wolf", "eagle", "fox", "bear",
-    "lynx", "raven", "swan", "hawk", "lion", "owl", "panther", "whale",
-    "comet", "river", "meadow", "canyon", "forest", "summit", "harbor", "glacier",
+    "otter", "falcon", "panda", "tiger", "wolf", "eagle", "fox", "bear", "lynx", "raven", "swan",
+    "hawk", "lion", "owl", "panther", "whale", "comet", "river", "meadow", "canyon", "forest",
+    "summit", "harbor", "glacier",
 ];
 
 /// Derive a short title from the first user message in the trace.
@@ -37,7 +37,9 @@ const NOUNS: &[&str] = &[
 fn generate_session_name_from_trace(trace: &[ChatMessage]) -> Option<String> {
     let first_user_text = trace.iter().find_map(|msg| match msg {
         openai_dive::v1::resources::chat::ChatMessage::User { content, .. } => match content {
-            openai_dive::v1::resources::chat::ChatMessageContent::Text(t) if !t.trim().is_empty() => {
+            openai_dive::v1::resources::chat::ChatMessageContent::Text(t)
+                if !t.trim().is_empty() =>
+            {
                 Some(t.trim())
             }
             _ => None,
@@ -143,8 +145,8 @@ impl SessionPersist {
         } else {
             // For new sessions, derive a title from the first user message,
             // falling back to a random name if none found.
-            let name = generate_session_name_from_trace(&trace)
-                .unwrap_or_else(generate_session_name);
+            let name =
+                generate_session_name_from_trace(&trace).unwrap_or_else(generate_session_name);
             (Utc::now(), Utc::now(), Some(name))
         };
 

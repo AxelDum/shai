@@ -49,20 +49,20 @@ impl PrettyFormatter {
 
                 if lines.len() == 1 {
                     // Single line: ANSI prefix + markdown content
-                    output.push_str("\x1b[2m> \x1b[0m");
+                    output.push_str("\x1b[36m>\x1b[0m ");
                     let mut user_skin = self.skin.clone();
-                    user_skin.paragraph.set_fg(rgb(120, 120, 120)); // Dark grey
+                    user_skin.paragraph.set_fg(rgb(180, 180, 180)); // Light grey
                     output.push_str(&user_skin.term_text(input).to_string());
                 } else {
                     // Multi-line: ANSI prefix for first line, then markdown for rest
-                    output.push_str(&format!("\x1b[2m> {}\x1b[0m", lines[0]));
+                    output.push_str(&format!("\x1b[36m>\x1b[0m {}", lines[0]));
 
                     if lines.len() > 1 {
                         let remaining_content = lines[1..].join("\n");
                         if !remaining_content.trim().is_empty() {
                             output.push('\n');
                             let mut user_skin = self.skin.clone();
-                            user_skin.paragraph.set_fg(rgb(120, 120, 120)); // Dark grey
+                            user_skin.paragraph.set_fg(rgb(180, 180, 180)); // Light grey
                             let formatted_content =
                                 user_skin.term_text(&remaining_content).to_string();
                             // Add 2-space indent to each line
@@ -322,19 +322,13 @@ impl PrettyFormatter {
                     // Show first N lines for user display only for specific tools
                     if matches!(
                         call.tool_name.as_str(),
-                        "bash"
-                            | "edit"
-                            | "multiedit"
-                            | "write"
-                            | "todo_read"
-                            | "todo_write"
+                        "bash" | "edit" | "multiedit" | "write" | "todo_read" | "todo_write"
                     ) {
                         let preview_lines: Vec<&str> =
                             tool_output.lines().take(self.max_preview_lines).collect();
                         if !preview_lines.is_empty() {
                             // Determine if we should syntax-highlight this output
-                            let should_highlight =
-                                matches!(call.tool_name.as_str(), "write");
+                            let should_highlight = matches!(call.tool_name.as_str(), "write");
                             let file_path = if should_highlight {
                                 Self::extract_primary_param(&call.parameters, &call.tool_name)
                                     .map(|(_, path)| path)

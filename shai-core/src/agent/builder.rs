@@ -7,6 +7,7 @@ use super::claims::ClaimManager;
 use super::AgentCore;
 use super::AgentError;
 use super::Brain;
+use crate::agent::agent::ToolContext;
 use crate::config::agent::{AgentConfig, CompactionConfig, VerificationConfig};
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
@@ -16,6 +17,7 @@ use crate::tools::{
     FsOperationLog, LsTool, McpConfig, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool,
     WriteTool,
 };
+use crate::tools::skills::SkillTool;
 
 use tracing::{debug, warn};
 
@@ -90,6 +92,27 @@ impl AgentBuilder {
         }
     }
 
+    /// Create a builder for a sub-agent that inherits shared state from a parent `ToolContext`.
+    ///
+    /// Sub-agents get their own `trace`, `tool_cache`, and `tool_budget` (fresh copies),
+    /// but share `claims`, `todo_storage`, and `fs_operation_log` with the parent.
+    pub async fn for_sub_agent(parent: &ToolContext, brain: Box<dyn Brain>) -> Self {
+        let permissions = parent.claims.read().await.clone();
+        Self {
+            session_id: Uuid::new_v4().to_string(),
+            brain,
+            goal: None,
+            trace: vec![],
+            available_tools: vec![],
+            permissions,
+            compaction_config: parent.compaction_config.clone(),
+            verification_config: parent.verification_config.clone(),
+            fs_operation_log: parent.fs_operation_log.clone(),
+            working_dir: parent.working_dir.clone(),
+            todo_storage: Some(parent.todo_storage.clone()),
+        }
+    }
+
     /// Set the todo_storage
     pub fn set_todo_storage(mut self, todo_storage: Arc<TodoStorage>) -> Self {
         self.todo_storage = Some(todo_storage);
@@ -97,7 +120,7 @@ impl AgentBuilder {
     }
 
     /// Create default set of tools
-    fn create_default_tools(
+    pub fn create_default_tools(
         fs_log: Arc<FsOperationLog>,
     ) -> (Vec<Box<dyn AnyTool>>, Arc<TodoStorage>) {
         let todo_storage = Arc::new(TodoStorage::new());
@@ -115,6 +138,7 @@ impl AgentBuilder {
                 Box::new(TodoReadTool::new(todo_storage.clone())),
                 Box::new(TodoWriteTool::new(todo_storage.clone())),
                 Box::new(WriteTool::new(fs_log)),
+                Box::new(SkillTool::new()),
             ];
 
         (tools, todo_storage)

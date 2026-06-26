@@ -487,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut agent = coder(Arc::new(llm), model.clone());
     if let Some(ref dir) = fixture_dir {
-        agent.working_dir = Some(dir.to_string_lossy().to_string());
+        agent.tool_ctx.working_dir = Some(dir.to_string_lossy().to_string());
     }
     let mut controller = agent.controller();
     let handler = MetricsHandler::new(shared_state.clone(), controller.clone());

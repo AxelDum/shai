@@ -42,6 +42,7 @@ use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
 use super::perm_manager::PermissionManager;
 use super::session_manager::SessionManager;
+use super::shortcuts::Shortcuts;
 use super::session_picker::{SessionPicker, SessionPickerAction};
 use super::statusbar::StatusBar;
 use super::theme::Theme;
@@ -74,6 +75,7 @@ pub struct App<'a> {
     pub(crate) tool_tracker: ToolTracker,
     pub(crate) input: InputArea<'a>, // input text
     pub(crate) command_registry: CommandRegistry,
+    pub(crate) shortcuts: Shortcuts,
     pub(crate) exit: bool,
     pub(crate) permission_manager: PermissionManager,
 
@@ -351,6 +353,13 @@ impl App<'_> {
     pub fn new() -> Self {
         let theme = Theme::from_env(); // Read from SHAI_TUI_THEME env var
         let palette = theme.palette();
+        let shortcuts = Shortcuts::load();
+        let mut input = InputArea::new(palette);
+        input.set_shortcuts(
+            shortcuts.cancel_task().clone(),
+            shortcuts.clear_input().clone(),
+            shortcuts.paste().clone(),
+        );
 
         Self {
             terminal: None,
@@ -358,8 +367,9 @@ impl App<'_> {
             custom_agent: None,
             formatter: PrettyFormatter::new(),
             state: AppModalState::InputShown,
-            input: InputArea::new(palette),
+            input,
             command_registry: CommandRegistry::new(),
+            shortcuts,
             exit: false,
             tool_tracker: ToolTracker::new(),
             permission_manager: PermissionManager::new(),
@@ -602,15 +612,7 @@ impl App<'_> {
     }
 
     async fn handle_key_event(&mut self, key_event: KeyEvent) -> io::Result<()> {
-        if (matches!(key_event.code, KeyCode::Char('c'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL))
-            || (matches!(key_event.code, KeyCode::Char('d'))
-                && key_event
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL))
-        {
+        if self.shortcuts.matches(&key_event, self.shortcuts.exit()) {
             self.exit = true;
             return Ok(());
         }
@@ -620,24 +622,16 @@ impl App<'_> {
             return self.handle_session_picker_key(key_event).await;
         }
 
-        // Handle theme toggle with Ctrl+T
-        if matches!(key_event.code, KeyCode::Char('t'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle theme toggle
+        if self.shortcuts.matches(&key_event, self.shortcuts.toggle_theme()) {
             self.theme.toggle();
             let new_palette = self.theme.palette();
             self.input.set_palette(new_palette);
             return Ok(());
         }
 
-        // Handle Ctrl+L — Clear screen / reset viewport
-        if matches!(key_event.code, KeyCode::Char('l'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle clear screen
+        if self.shortcuts.matches(&key_event, self.shortcuts.clear_screen()) {
             if let Some(ref mut terminal) = self.terminal {
                 terminal.clear()?;
             }
@@ -645,12 +639,8 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+R — Retry/regenerate last response
-        if matches!(key_event.code, KeyCode::Char('r'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle regenerate
+        if self.shortcuts.matches(&key_event, self.shortcuts.regenerate()) {
             if let Some(ref agent) = self.agent {
                 let _ = agent.controller.regenerate().await;
                 self.notify("Regenerating last response...", Duration::from_secs(2));
@@ -658,12 +648,8 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+K — Copy last assistant response to clipboard
-        if matches!(key_event.code, KeyCode::Char('k'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle copy response
+        if self.shortcuts.matches(&key_event, self.shortcuts.copy_response()) {
             if !self.session_manager.last_assistant_response().is_empty() {
                 if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
                     let _ = ctx
@@ -676,8 +662,8 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Shift+Tab — Cycle agent mode (Plan/Manual/Auto)
-        if key_event.code == KeyCode::BackTab {
+        // Handle cycle agent mode
+        if self.shortcuts.matches(&key_event, self.shortcuts.cycle_agent_mode()) {
             let mode = self.input.cycle_agent_mode();
             self.status_bar.set_agent_mode(&format!("{:?}", mode));
             if let Some(ref agent) = self.agent {
@@ -699,12 +685,8 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+X — Expand last tool result in alternate screen viewer
-        if matches!(key_event.code, KeyCode::Char('x'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle expand tool
+        if self.shortcuts.matches(&key_event, self.shortcuts.expand_tool()) {
             if let Some(output) = self.tool_tracker.last_output().map(|s| s.to_string()) {
                 let file_path = self.tool_tracker.last_file_path().map(|s| s.to_string());
                 let mut viewer = AlternateScreenViewer::new(output, file_path);
@@ -713,23 +695,15 @@ impl App<'_> {
             return Ok(());
         }
 
-        // Handle Ctrl+O — Open session picker
-        if matches!(key_event.code, KeyCode::Char('o'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle session picker
+        if self.shortcuts.matches(&key_event, self.shortcuts.session_picker()) {
             let sessions = shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
             self.session_picker = Some(SessionPicker::new(sessions, self.theme.palette()));
             return Ok(());
         }
 
-        // Handle Ctrl+P — Open prompt picker
-        if matches!(key_event.code, KeyCode::Char('p'))
-            && key_event
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        // Handle prompt picker
+        if self.shortcuts.matches(&key_event, self.shortcuts.prompt_picker()) {
             let prompts = shai_core::tools::prompts::discover_prompts();
             let active = shai_core::tools::prompts::load_active_prompts_from_disk();
             let mut picker = crate::tui::prompt_picker::PromptPicker::new(

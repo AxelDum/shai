@@ -17,7 +17,9 @@ use tui_textarea::{Input as TextInput, TextArea};
 use crate::tui::helper::HelpArea;
 
 use super::suggestion::{CommandSuggestion, FileSuggestion};
+use super::shortcuts::key_event_to_binding;
 use super::theme::ThemePalette;
+use shai_core::config::tui::KeyBinding;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentMode {
@@ -71,6 +73,11 @@ pub struct InputArea<'a> {
 
     // theme colors
     palette: ThemePalette,
+
+    // configurable key bindings
+    cancel_task_binding: KeyBinding,
+    clear_input_binding: KeyBinding,
+    paste_binding: KeyBinding,
 }
 
 impl InputArea<'_> {
@@ -96,6 +103,19 @@ impl InputArea<'_> {
             file_suggestion: FileSuggestion::new(),
             cmd_suggestion: CommandSuggestion::new(),
             palette,
+            // defaults — overridden by set_shortcuts()
+            cancel_task_binding: KeyBinding::new(
+                shai_core::config::tui::KeyCode::Escape,
+                shai_core::config::tui::KeyModifiers::NONE,
+            ),
+            clear_input_binding: KeyBinding::new(
+                shai_core::config::tui::KeyCode::Escape,
+                shai_core::config::tui::KeyModifiers::NONE,
+            ),
+            paste_binding: KeyBinding::new(
+                shai_core::config::tui::KeyCode::Char('v'),
+                shai_core::config::tui::KeyModifiers::CONTROL,
+            ),
         }
     }
 
@@ -114,6 +134,17 @@ impl InputArea<'_> {
             AgentMode::Auto => AgentMode::Plan,
         };
         self.agent_mode
+    }
+
+    pub fn set_shortcuts(
+        &mut self,
+        cancel_task: KeyBinding,
+        clear_input: KeyBinding,
+        paste: KeyBinding,
+    ) {
+        self.cancel_task_binding = cancel_task;
+        self.clear_input_binding = clear_input;
+        self.paste_binding = paste;
     }
 }
 
@@ -295,49 +326,53 @@ impl InputArea<'_> {
             self.input.input(event);
         }
 
+        let binding = key_event_to_binding(&key_event);
+
+        // Check cancel_task / clear_input bindings
+        if binding == self.cancel_task_binding || binding == self.clear_input_binding {
+            if self.agent_running {
+                return UserAction::CancelTask;
+            }
+
+            // Handle escape key for input clearing
+            if let Some(escape_time) = self.escape_press_time {
+                // Second escape within 1 second - clear input
+                if escape_time.elapsed() < Duration::from_secs(1) {
+                    self.input = TextArea::default();
+                    self.escape_press_time = None;
+                    self.helper_msg = None;
+                    return UserAction::Nope;
+                }
+            }
+
+            // First escape or escape after timeout - show message
+            if !self.input.lines()[0].is_empty() {
+                self.escape_press_time = Some(now);
+                self.helper_set = Some(now);
+                self.helper_duration = Some(Duration::from_secs(1));
+                self.helper_msg = Some(" press esc again to clear".to_string());
+            }
+            return UserAction::Nope;
+        }
+
+        // Check paste binding
+        if binding == self.paste_binding {
+            // Handle Ctrl+V or Cmd+V paste directly from clipboard
+            if let Ok(mut ctx) = ClipboardContext::new() {
+                if let Ok(text) = ctx.get_contents() {
+                    self.input.insert_str(text);
+                    return UserAction::Nope;
+                }
+            }
+            // Fallback: let TextArea handle it normally
+            let event: TextInput = Event::Key(key_event).into();
+            self.input.input(event);
+            return UserAction::Nope;
+        }
+
         match key_event.code {
             KeyCode::Char('?') if self.input.lines()[0].is_empty() && self.help.is_none() => {
                 self.help = Some(HelpArea);
-            }
-            KeyCode::Esc => {
-                if self.agent_running {
-                    return UserAction::CancelTask;
-                }
-
-                // Handle escape key for input clearing
-                if let Some(escape_time) = self.escape_press_time {
-                    // Second escape within 1 second - clear input
-                    if escape_time.elapsed() < Duration::from_secs(1) {
-                        self.input = TextArea::default();
-                        self.escape_press_time = None;
-                        self.helper_msg = None;
-                        return UserAction::Nope;
-                    }
-                }
-
-                // First escape or escape after timeout - show message
-                if !self.input.lines()[0].is_empty() {
-                    self.escape_press_time = Some(now);
-                    self.helper_set = Some(now);
-                    self.helper_duration = Some(Duration::from_secs(1));
-                    self.helper_msg = Some(" press esc again to clear".to_string());
-                }
-            }
-            KeyCode::Char('v')
-                if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                    || key_event.modifiers.contains(KeyModifiers::SUPER) =>
-            {
-                // Handle Ctrl+V or Cmd+V paste directly from clipboard
-                if let Ok(mut ctx) = ClipboardContext::new() {
-                    if let Ok(text) = ctx.get_contents() {
-                        self.input.insert_str(text);
-                        return UserAction::Nope;
-                    }
-                }
-                // Fallback: let TextArea handle it normally
-                let event: TextInput = Event::Key(key_event).into();
-                self.input.input(event);
-                return UserAction::Nope;
             }
             KeyCode::Enter => {
                 // Alt+Enter creates a new line immediately

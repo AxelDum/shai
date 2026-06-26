@@ -222,23 +222,17 @@ impl FileSuggestion {
     }
 }
 
+use super::command::COMMANDS;
+
 pub struct CommandSuggestion {
     suggestions: Vec<String>,
     selected_index: Option<usize>,
 }
 
 impl CommandSuggestion {
-    const ALL_COMMANDS: &'static [&'static str] = &[
-        "/exit",
-        "/tc",
-        "/temp",
-        "/tokens",
-        "/theme",
-        "/restore",
-        "/latest",
-        "/skills",
-        "/regenerate",
-    ];
+    fn all_commands() -> Vec<&'static str> {
+        COMMANDS.iter().map(|c| c.name).collect()
+    }
 
     pub fn new() -> Self {
         Self {
@@ -288,14 +282,15 @@ impl CommandSuggestion {
     pub fn update(&mut self, input: &str) {
         if input.starts_with('/') && !input.contains(' ') {
             let prefix = input.trim();
-            let filtered: Vec<String> = Self::ALL_COMMANDS
+            let all = Self::all_commands();
+            let filtered: Vec<String> = all
                 .iter()
                 .filter(|cmd| cmd.starts_with(prefix))
                 .map(|s| s.to_string())
                 .collect();
-            if filtered.is_empty() || (filtered.len() == Self::ALL_COMMANDS.len() && prefix == "/")
+            if filtered.is_empty() || (filtered.len() == all.len() && prefix == "/")
             {
-                self.suggestions = Self::ALL_COMMANDS.iter().map(|s| s.to_string()).collect();
+                self.suggestions = all.iter().map(|s| s.to_string()).collect();
             } else {
                 self.suggestions = filtered;
             }

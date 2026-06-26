@@ -82,7 +82,11 @@ impl WriteTool {
         // Validate that existing files have been read first
         for file_spec in &params.files {
             if Path::new(&file_spec.path).exists() {
-                if let Err(err) = self.operation_log.validate_edit_permission(&file_spec.path).await {
+                if let Err(err) = self
+                    .operation_log
+                    .validate_edit_permission(&file_spec.path)
+                    .await
+                {
                     return ToolResult::error(err);
                 }
             }

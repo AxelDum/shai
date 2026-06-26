@@ -41,10 +41,10 @@ use tracing::{debug, warn};
 use super::history::ConversationHistory;
 use super::input::{AgentMode, UserAction};
 use super::perm::PermissionModalAction;
+use super::session_picker::{SessionPicker, SessionPickerAction};
 use super::statusbar::StatusBar;
 use super::theme::Theme;
 use super::viewer::AlternateScreenViewer;
-use super::session_picker::{SessionPicker, SessionPickerAction};
 use crate::tui::input::InputArea;
 use crate::tui::perm::PermissionWidget;
 use crate::tui::perm_alt_screen::AlternateScreenPermissionModal;
@@ -133,7 +133,10 @@ impl App<'_> {
                 name, self.agent_model, self.agent_provider
             )
         } else {
-            format!("\x1b[2m░ {} on {}\x1b[0m", self.agent_model, self.agent_provider)
+            format!(
+                "\x1b[2m░ {} on {}\x1b[0m",
+                self.agent_model, self.agent_provider
+            )
         };
 
         // Get Agent I/O
@@ -164,20 +167,7 @@ impl App<'_> {
         self.status_bar.set_model(&self.agent_model);
         self.status_bar.set_provider(&self.agent_provider);
 
-        // Update status bar with working directory and git branch
-        if let Ok(cwd) = std::env::current_dir() {
-            self.status_bar
-                .set_location(&cwd.to_string_lossy().to_string());
-        }
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .output()
-        {
-            if output.status.success() {
-                let branch = String::from_utf8_lossy(&output.stdout);
-                self.status_bar.set_git_branch(branch.trim());
-            }
-        }
+        self.refresh_status_bar();
 
         Ok(banner)
     }
@@ -245,6 +235,9 @@ impl App<'_> {
 
         // Render the trace into the TUI
         self.render_restored_trace(&session.trace);
+        self.history.scroll_to_bottom();
+        self.refresh_status_bar();
+
         Ok(())
     }
 
@@ -310,6 +303,7 @@ impl App<'_> {
 
             // Add to conversation history (rendered by draw_ui)
             self.history.add_text(&formatted);
+            self.history.scroll_to_bottom();
         }
 
         // Handle permission requests - just add to queue
@@ -340,9 +334,29 @@ impl App<'_> {
         if let AgentEvent::Error { error } = &event {
             let error_msg = format!("\x1b[31m✘ Error: {}\x1b[0m", error);
             self.history.add_text(&error_msg);
+            self.history.scroll_to_bottom();
         }
 
+        self.refresh_status_bar();
+
         Ok(())
+    }
+
+    /// Refresh the status bar with current working directory and git branch.
+    fn refresh_status_bar(&mut self) {
+        if let Ok(cwd) = std::env::current_dir() {
+            self.status_bar
+                .set_location(&cwd.to_string_lossy().to_string());
+        }
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+        {
+            if output.status.success() {
+                let branch = String::from_utf8_lossy(&output.stdout);
+                self.status_bar.set_git_branch(branch.trim());
+            }
+        }
     }
 }
 
@@ -419,15 +433,18 @@ impl App<'_> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Start the agent (custom or default)
         let agent_name_ref = agent_name.as_deref();
-        let banner = self.start_agent(agent_name_ref).await.map_err(|e| -> Box<dyn std::error::Error> {
-            if let Some(name) = agent_name_ref {
-                format!("could not start custom agent '{}': {}", name, e).into()
-            } else {
-                "could not start shai agent, run shai auth first"
-                    .to_string()
-                    .into()
-            }
-        })?;
+        let banner =
+            self.start_agent(agent_name_ref)
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> {
+                    if let Some(name) = agent_name_ref {
+                        format!("could not start custom agent '{}': {}", name, e).into()
+                    } else {
+                        "could not start shai agent, run shai auth first"
+                            .to_string()
+                            .into()
+                    }
+                })?;
 
         // create terminal
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
@@ -530,17 +547,15 @@ impl App<'_> {
                 self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
             }
-            Event::Mouse(mouse_event) => {
-                match mouse_event.kind {
-                    MouseEventKind::ScrollUp => {
-                        self.history.scroll_up(3);
-                    }
-                    MouseEventKind::ScrollDown => {
-                        self.history.scroll_down(3);
-                    }
-                    _ => {}
+            Event::Mouse(mouse_event) => match mouse_event.kind {
+                MouseEventKind::ScrollUp => {
+                    self.history.scroll_up(3);
                 }
-            }
+                MouseEventKind::ScrollDown => {
+                    self.history.scroll_down(3);
+                }
+                _ => {}
+            },
             _ => {}
         }
         Ok(())
@@ -585,7 +600,7 @@ impl App<'_> {
             return Ok(());
         }
 
-               // Handle Ctrl+R — Retry/regenerate last response
+        // Handle Ctrl+R — Retry/regenerate last response
         if matches!(key_event.code, KeyCode::Char('r'))
             && key_event
                 .modifiers
@@ -593,8 +608,7 @@ impl App<'_> {
         {
             if let Some(ref agent) = self.agent {
                 let _ = agent.controller.regenerate().await;
-                self
-                    .notify("Regenerating last response...", Duration::from_secs(2));
+                self.notify("Regenerating last response...", Duration::from_secs(2));
             }
             return Ok(());
         }
@@ -608,12 +622,10 @@ impl App<'_> {
             if !self.last_assistant_response.is_empty() {
                 if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
                     let _ = ctx.set_contents(self.last_assistant_response.clone());
-                    self
-                        .notify("Copied last response to clipboard", Duration::from_secs(2));
+                    self.notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {
-                self
-                    .notify("No assistant response to copy", Duration::from_secs(2));
+                self.notify("No assistant response to copy", Duration::from_secs(2));
             }
             return Ok(());
         }
@@ -661,8 +673,7 @@ impl App<'_> {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            let sessions = shai_core::session::SessionPersist::list_sessions()
-                .unwrap_or_default();
+            let sessions = shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
             let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
             if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
                 if let Some(session) = sessions.get(idx) {
@@ -680,17 +691,17 @@ impl App<'_> {
         {
             let prompts = shai_core::tools::prompts::discover_prompts();
             let active = shai_core::tools::prompts::load_active_prompts_from_disk();
-            let mut picker =
-                crate::tui::prompt_picker::PromptPicker::new(prompts, &active, self.theme.palette());
+            let mut picker = crate::tui::prompt_picker::PromptPicker::new(
+                prompts,
+                &active,
+                self.theme.palette(),
+            );
             match picker.run().await {
                 Ok(crate::tui::prompt_picker::PromptPickerAction::Selected(selected)) => {
                     if let Some(ref agent) = self.agent {
                         let _ = agent.controller.set_active_prompts(selected.clone()).await;
                         let _ = shai_core::tools::prompts::save_active_prompts(&selected);
-                        self.notify(
-                            "System prompts updated",
-                            std::time::Duration::from_secs(2),
-                        );
+                        self.notify("System prompts updated", std::time::Duration::from_secs(2));
                     }
                 }
                 _ => {}
@@ -768,18 +779,19 @@ impl App<'_> {
 
                 if widget.height() > terminal_height.saturating_sub(5) {
                     // Use alternate screen for large modals
-                    let action = match AlternateScreenPermissionModal::new(&widget, palette) {
-                        Ok(mut modal) => modal.run().await.unwrap_or_else(|_| {
-                            PermissionModalAction::Response {
+                    let action =
+                        match AlternateScreenPermissionModal::new(&widget, palette) {
+                            Ok(mut modal) => modal.run().await.unwrap_or_else(|_| {
+                                PermissionModalAction::Response {
+                                    request_id: request_id.clone(),
+                                    choice: shai_core::agent::PermissionResponse::Deny,
+                                }
+                            }),
+                            Err(_) => PermissionModalAction::Response {
                                 request_id: request_id.clone(),
                                 choice: shai_core::agent::PermissionResponse::Deny,
-                            }
-                        }),
-                        Err(_) => PermissionModalAction::Response {
-                            request_id: request_id.clone(),
-                            choice: shai_core::agent::PermissionResponse::Deny,
-                        },
-                    };
+                            },
+                        };
                     self.handle_permission_action(action).await?;
                 } else {
                     // Use inline modal for small modals
@@ -800,8 +812,7 @@ impl App<'_> {
             UserAction::CancelTask => {
                 if let Some(ref agent) = self.agent {
                     let _ = agent.controller.stop_current_task().await;
-                    self
-                        .notify("Task cancelled", Duration::from_secs(1));
+                    self.notify("Task cancelled", Duration::from_secs(1));
                 }
             }
             UserAction::UserInput { input } => {
@@ -832,15 +843,16 @@ impl App<'_> {
 
         if let Some(ref mut terminal) = self.terminal {
             terminal.draw(|frame| {
-                let [_, history_area, _, tools_area, modal_area, statusbar_area] = Layout::vertical([
-                    Constraint::Length(1),                    // padding
-                    Constraint::Fill(1),                      // conversation history
-                    Constraint::Length(1),                    // bottom margin
-                    Constraint::Length(running_tools_height), // running tools
-                    Constraint::Length(modal_height),         // input or modal
-                    Constraint::Length(1),                    // status bar
-                ])
-                .areas(frame.area());
+                let [_, history_area, _, tools_area, modal_area, statusbar_area] =
+                    Layout::vertical([
+                        Constraint::Length(1),                    // padding
+                        Constraint::Fill(1),                      // conversation history
+                        Constraint::Length(2),                    // bottom margin
+                        Constraint::Length(running_tools_height), // running tools
+                        Constraint::Length(modal_height),         // input or modal
+                        Constraint::Length(1),                    // status bar
+                    ])
+                    .areas(frame.area());
 
                 // draw conversation history
                 self.history.draw(frame, history_area);

@@ -174,7 +174,10 @@ fn active_prompts_path() -> Option<PathBuf> {
 /// Save the list of active prompt names to disk so they persist across restarts.
 pub fn save_active_prompts(names: &[String]) -> Result<(), std::io::Error> {
     let path = active_prompts_path().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "Could not determine home directory")
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine home directory",
+        )
     })?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

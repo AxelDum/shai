@@ -40,7 +40,7 @@ impl PromptPickerState {
     fn new(prompts: Vec<PromptInfo>, active: &[String]) -> Self {
         let active_indices = prompts
             .iter()
- .enumerate()
+            .enumerate()
             .filter_map(|(i, p)| {
                 if active.iter().any(|a| a == &p.name) {
                     Some(i)
@@ -95,14 +95,16 @@ impl PromptPicker {
 
         let chunks = Layout::vertical([
             Constraint::Length(1), // title
-            Constraint::Min(1),  // list
+            Constraint::Min(1),    // list
         ])
         .split(area);
 
         // Title
         let title = Line::from(vec![Span::styled(
             " System Prompts (Space to toggle, Enter to confirm) ",
-            Style::default().fg(self.palette.suggestion_selected_fg).bold(),
+            Style::default()
+                .fg(self.palette.suggestion_selected_fg)
+                .bold(),
         )]);
         frame.render_widget(title, chunks[0]);
 
@@ -136,7 +138,11 @@ impl PromptPicker {
             .clone()
             .map(|i| {
                 let prompt = &self.state.prompts[i];
-                let check = if self.state.is_active(i) { "[x]" } else { "[ ]" };
+                let check = if self.state.is_active(i) {
+                    "[x]"
+                } else {
+                    "[ ]"
+                };
                 let label = if prompt.description.is_empty() {
                     format!("{} {}", check, prompt.name)
                 } else {
@@ -217,8 +223,7 @@ impl PromptPicker {
                                 self.state.selected = 0;
                             }
                             KeyCode::End => {
-                                self.state.selected =
-                                    self.state.prompts.len().saturating_sub(1);
+                                self.state.selected = self.state.prompts.len().saturating_sub(1);
                             }
                             KeyCode::Char(' ') => {
                                 if !self.state.prompts.is_empty() {

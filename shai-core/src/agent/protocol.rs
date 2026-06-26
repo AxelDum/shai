@@ -118,9 +118,7 @@ impl AgentController {
 
     /// Remove the last assistant message(s) and re-think from the last user input
     pub async fn regenerate(&self) -> Result<(), AgentError> {
-        self.send(AgentRequest::Regenerate)
-            .await
-            .map(|_| Ok(()))?
+        self.send(AgentRequest::Regenerate).await.map(|_| Ok(()))?
     }
 
     pub async fn set_method(
@@ -302,7 +300,10 @@ impl AgentController {
     }
 
     /// Set active system prompts by name
-    pub async fn set_active_prompts(&self, prompts: Vec<String>) -> Result<Vec<String>, AgentError> {
+    pub async fn set_active_prompts(
+        &self,
+        prompts: Vec<String>,
+    ) -> Result<Vec<String>, AgentError> {
         match self.send(AgentRequest::SetActivePrompts(prompts)).await? {
             AgentResponse::PromptsStatus { prompts } => Ok(prompts),
             _ => Err(AgentError::InvalidResponse(
@@ -313,7 +314,7 @@ impl AgentController {
 
     /// Get active system prompts
     pub async fn get_active_prompts(&self) -> Result<Vec<String>, AgentError> {
-        match self.send(AgentRequest::SetActivePrompts(vec!())).await? {
+        match self.send(AgentRequest::SetActivePrompts(vec![])).await? {
             AgentResponse::PromptsStatus { prompts } => Ok(prompts),
             _ => Err(AgentError::InvalidResponse(
                 "Expected PromptsStatus response".to_string(),

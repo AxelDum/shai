@@ -154,11 +154,9 @@ pub fn compact_trace_if_needed(
         if let ChatMessage::Tool { tool_call_id, .. } = &trace[idx] {
             let replacement = tool_metadata
                 .get(tool_call_id)
-                .map(|info| {
-                    match &info.primary_param {
-                        Some(param) => format!("[compacted] {}({})", info.tool_name, param),
-                        None => format!("[compacted] {}", info.tool_name),
-                    }
+                .map(|info| match &info.primary_param {
+                    Some(param) => format!("[compacted] {}({})", info.tool_name, param),
+                    None => format!("[compacted] {}", info.tool_name),
                 })
                 .unwrap_or_else(|| "[compacted]".to_string());
 
@@ -200,10 +198,13 @@ mod tests {
                 tool_call_id: id.clone(),
                 content: ChatMessageContent::Text("x".repeat(1000)),
             });
-            metadata.insert(id, ToolCallInfo {
-                tool_name: "read".to_string(),
-                primary_param: Some(format!("src/file_{}.rs", i)),
-            });
+            metadata.insert(
+                id,
+                ToolCallInfo {
+                    tool_name: "read".to_string(),
+                    primary_param: Some(format!("src/file_{}.rs", i)),
+                },
+            );
         }
         let result = compact_trace_if_needed(&mut trace, 5000, &metadata);
         assert!(result);
@@ -224,10 +225,13 @@ mod tests {
                 tool_call_id: id.clone(),
                 content: ChatMessageContent::Text("x".repeat(1000)),
             });
-            metadata.insert(id, ToolCallInfo {
-                tool_name: "read".to_string(),
-                primary_param: Some("src/file.rs".to_string()),
-            });
+            metadata.insert(
+                id,
+                ToolCallInfo {
+                    tool_name: "read".to_string(),
+                    primary_param: Some("src/file.rs".to_string()),
+                },
+            );
         }
         let _ = compact_trace_if_needed(&mut trace, 5000, &metadata);
 
@@ -263,18 +267,27 @@ mod tests {
             content: ChatMessageContent::Text("z".repeat(100)),
         });
 
-        metadata.insert("small".to_string(), ToolCallInfo {
-            tool_name: "read".to_string(),
-            primary_param: Some("small.rs".to_string()),
-        });
-        metadata.insert("large".to_string(), ToolCallInfo {
-            tool_name: "read".to_string(),
-            primary_param: Some("large.rs".to_string()),
-        });
-        metadata.insert("small2".to_string(), ToolCallInfo {
-            tool_name: "read".to_string(),
-            primary_param: Some("small2.rs".to_string()),
-        });
+        metadata.insert(
+            "small".to_string(),
+            ToolCallInfo {
+                tool_name: "read".to_string(),
+                primary_param: Some("small.rs".to_string()),
+            },
+        );
+        metadata.insert(
+            "large".to_string(),
+            ToolCallInfo {
+                tool_name: "read".to_string(),
+                primary_param: Some("large.rs".to_string()),
+            },
+        );
+        metadata.insert(
+            "small2".to_string(),
+            ToolCallInfo {
+                tool_name: "read".to_string(),
+                primary_param: Some("small2.rs".to_string()),
+            },
+        );
 
         // Add padding to exceed keep_recent
         for i in 0..110 {
@@ -283,10 +296,13 @@ mod tests {
                 tool_call_id: id.clone(),
                 content: ChatMessageContent::Text("p".repeat(200)),
             });
-            metadata.insert(id, ToolCallInfo {
-                tool_name: "bash".to_string(),
-                primary_param: None,
-            });
+            metadata.insert(
+                id,
+                ToolCallInfo {
+                    tool_name: "bash".to_string(),
+                    primary_param: None,
+                },
+            );
         }
 
         let result = compact_trace_if_needed(&mut trace, 10000, &metadata);
@@ -337,7 +353,12 @@ mod tests {
         for i in 0..20 {
             if let ChatMessage::Tool { content, .. } = &trace[i] {
                 if let ChatMessageContent::Text(s) = content {
-                    assert!(s.len() <= 4000, "entry {} should be ≤4000, got {}", i, s.len());
+                    assert!(
+                        s.len() <= 4000,
+                        "entry {} should be ≤4000, got {}",
+                        i,
+                        s.len()
+                    );
                 }
             }
         }
@@ -359,7 +380,12 @@ mod tests {
         for i in 0..50 {
             if let ChatMessage::Tool { content, .. } = &trace[i] {
                 if let ChatMessageContent::Text(s) = content {
-                    assert!(s.len() <= 2000, "entry {} should be ≤2000, got {}", i, s.len());
+                    assert!(
+                        s.len() <= 2000,
+                        "entry {} should be ≤2000, got {}",
+                        i,
+                        s.len()
+                    );
                 }
             }
         }
@@ -381,7 +407,12 @@ mod tests {
         for i in 0..80 {
             if let ChatMessage::Tool { content, .. } = &trace[i] {
                 if let ChatMessageContent::Text(s) = content {
-                    assert!(s.len() <= 500, "entry {} should be ≤500, got {}", i, s.len());
+                    assert!(
+                        s.len() <= 500,
+                        "entry {} should be ≤500, got {}",
+                        i,
+                        s.len()
+                    );
                 }
             }
         }
@@ -444,18 +475,24 @@ mod tests {
                 tool_call_id: id.clone(),
                 content: ChatMessageContent::Text("x".repeat(10000)),
             });
-            metadata.insert(id, ToolCallInfo {
-                tool_name: "read".to_string(),
-                primary_param: Some(format!("src/file_{}.rs", i)),
-            });
+            metadata.insert(
+                id,
+                ToolCallInfo {
+                    tool_name: "read".to_string(),
+                    primary_param: Some(format!("src/file_{}.rs", i)),
+                },
+            );
         }
         // max_chars is small enough that hard compaction will also kick in
         compact_trace_if_needed(&mut trace, 50000, &metadata);
         // Some entries should be hard-compacted
-        let compacted_count = trace.iter().filter(|m| {
-            matches!(m, ChatMessage::Tool { content, .. } 
+        let compacted_count = trace
+            .iter()
+            .filter(|m| {
+                matches!(m, ChatMessage::Tool { content, .. } 
                 if matches!(content, ChatMessageContent::Text(t) if t.starts_with("[compacted]")))
-        }).count();
+            })
+            .count();
         assert!(compacted_count > 0, "expected hard compaction to occur");
     }
 }

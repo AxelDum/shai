@@ -68,7 +68,9 @@ impl AgentBuilder {
         let fs_log = Arc::new(FsOperationLog::new());
         let (tools, todo_storage) = Self::create_default_tools(fs_log.clone());
 
-        Ok(Self::with_brain(brain).tools(tools).set_todo_storage(todo_storage))
+        Ok(Self::with_brain(brain)
+            .tools(tools)
+            .set_todo_storage(todo_storage))
     }
 
     /// Create AgentBuilder with a specific brain
@@ -95,24 +97,25 @@ impl AgentBuilder {
     }
 
     /// Create default set of tools
-    fn create_default_tools(fs_log: Arc<FsOperationLog>) -> (Vec<Box<dyn AnyTool>>, Arc<TodoStorage>) {
+    fn create_default_tools(
+        fs_log: Arc<FsOperationLog>,
+    ) -> (Vec<Box<dyn AnyTool>>, Arc<TodoStorage>) {
         let todo_storage = Arc::new(TodoStorage::new());
 
-        let tools: Vec<Box<dyn AnyTool>> = vec![
-            Box::new(BashTool::new()),
-            Box::new(EditTool::new(fs_log.clone())),
-            Box::new(FetchTool::new()),
-            Box::new(
-                FindTool::new().with_exclude_patterns(
+        let tools: Vec<Box<dyn AnyTool>> =
+            vec![
+                Box::new(BashTool::new()),
+                Box::new(EditTool::new(fs_log.clone())),
+                Box::new(FetchTool::new()),
+                Box::new(FindTool::new().with_exclude_patterns(
                     CompactionConfig::default().find_exclude_patterns.clone(),
-                ),
-            ),
-            Box::new(LsTool::new()),
-            Box::new(ReadTool::new(fs_log.clone())),
-            Box::new(TodoReadTool::new(todo_storage.clone())),
-            Box::new(TodoWriteTool::new(todo_storage.clone())),
-            Box::new(WriteTool::new(fs_log)),
-        ];
+                )),
+                Box::new(LsTool::new()),
+                Box::new(ReadTool::new(fs_log.clone())),
+                Box::new(TodoReadTool::new(todo_storage.clone())),
+                Box::new(TodoWriteTool::new(todo_storage.clone())),
+                Box::new(WriteTool::new(fs_log)),
+            ];
 
         (tools, todo_storage)
     }

@@ -12,8 +12,8 @@ pub mod states;
 #[cfg(test)]
 mod tests;
 
-pub use agent::{Agent, AgentCore, AgentResult, TaskAgentResponse};
 pub use agent::ToolCallInfo;
+pub use agent::{Agent, AgentCore, AgentResult, TaskAgentResponse};
 pub use states::{InternalAgentState, PublicAgentState};
 
 pub use protocol::{AgentController, AgentRequest, AgentResponse};

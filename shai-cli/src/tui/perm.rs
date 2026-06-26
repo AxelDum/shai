@@ -52,9 +52,9 @@ impl PermissionWidget<'_> {
     ) -> Self {
         let formatter = PrettyFormatter::new();
         let formatted_request = formatter.format_toolcall(&request.call, request.preview.as_ref());
-        let preview_text = formatted_request.into_text().unwrap_or_else(|_| {
-            Text::from(formatted_request.clone())
-        });
+        let preview_text = formatted_request
+            .into_text()
+            .unwrap_or_else(|_| Text::from(formatted_request.clone()));
         let content_length = preview_text.lines.len();
 
         Self {
@@ -220,11 +220,7 @@ impl PermissionWidget<'_> {
             f.render_stateful_widget(scrollbar, inner, &mut self.scroll_state.clone());
         }
 
-        let items = [
-            "Allow",
-            "Use auto mode",
-            "Deny",
-        ];
+        let items = ["Allow", "Use auto mode", "Deny"];
         let mut lines = vec![Line::from("Do you want to run this tool?")];
         for (i, s) in items.into_iter().enumerate() {
             if i == self.selected_index {

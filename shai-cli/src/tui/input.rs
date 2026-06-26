@@ -132,7 +132,6 @@ impl InputArea<'_> {
 
 /// alert message in yellow, top left
 impl InputArea<'_> {
-
     pub fn set_history(&mut self, history: Vec<String>) {
         self.history = history;
         self.history_index = self.history.len();
@@ -263,7 +262,15 @@ impl InputArea<'_> {
         if current_text.starts_with('/') && !current_text.contains(' ') {
             let prefix = current_text.trim();
             let all_commands = [
-                "/exit", "/tc", "/temp", "/tokens", "/theme", "/restore", "/latest", "/skills", "/regenerate",
+                "/exit",
+                "/tc",
+                "/temp",
+                "/tokens",
+                "/theme",
+                "/restore",
+                "/latest",
+                "/skills",
+                "/regenerate",
             ];
             let filtered: Vec<String> = all_commands
                 .iter()
@@ -753,11 +760,8 @@ impl InputArea<'_> {
         f.render_widget(&self.input, prompt);
 
         // Helper text area below input
-        let [helper_left, _] = Layout::horizontal([
-            Constraint::Fill(1),
-            Constraint::Length(0),
-        ])
-        .areas(helper);
+        let [helper_left, _] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(0)]).areas(helper);
 
         // Multi-line indicator
         let line_count = self.input.lines().len();

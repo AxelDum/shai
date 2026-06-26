@@ -108,7 +108,9 @@ impl AgentCore {
         max_cached_commands: usize,
         read_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_reads: usize,
-        tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
+        tool_call_metadata: Arc<
+            RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>,
+        >,
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {

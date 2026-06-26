@@ -79,9 +79,7 @@ pub enum AgentEvent {
         compacted_bytes: usize,
     },
     /// User provided input to the agent
-    UserInput {
-        input: String,
-    },
+    UserInput { input: String },
     /// Agent requires user input to continue
     UserInputRequired {
         request_id: String,
@@ -272,28 +270,24 @@ impl std::fmt::Debug for AgentEvent {
                     //.field("response_channel", &"<oneshot::Sender>")
                     .finish()
             }
-            AgentEvent::Error { error } => {
-                f.debug_struct("Error")
-                    .field("error", error)
-                    .finish()
-            }
-            AgentEvent::Completed { success, message } => {
-                f.debug_struct("Completed")
-                    .field("success", success)
-                    .field("message", message)
-                    .finish()
-            }
-            AgentEvent::TokenUsage { input_tokens, output_tokens, cached_tokens } => {
-                f.debug_struct("TokenUsage")
-                    .field("input_tokens", input_tokens)
-                    .field("output_tokens", output_tokens)
-                    .field("cached_tokens", cached_tokens)
-                    .finish()
-            }
+            AgentEvent::Error { error } => f.debug_struct("Error").field("error", error).finish(),
+            AgentEvent::Completed { success, message } => f
+                .debug_struct("Completed")
+                .field("success", success)
+                .field("message", message)
+                .finish(),
+            AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+                cached_tokens,
+            } => f
+                .debug_struct("TokenUsage")
+                .field("input_tokens", input_tokens)
+                .field("output_tokens", output_tokens)
+                .field("cached_tokens", cached_tokens)
+                .finish(),
             AgentEvent::TodoUpdated { todos } => {
-                f.debug_struct("TodoUpdated")
-                    .field("todos", todos)
-                    .finish()
+                f.debug_struct("TodoUpdated").field("todos", todos).finish()
             }
         }
     }

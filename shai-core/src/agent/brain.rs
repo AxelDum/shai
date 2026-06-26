@@ -13,10 +13,11 @@ pub struct ThinkerContext {
     pub available_tools: AnyToolBox,
     pub method: ToolCallMethod,
     pub max_trace_chars: usize,
-    pub temperature:      f32,
-    pub is_plan_mode:    bool,
-    pub active_prompts:  Vec<String>,
-    pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
+    pub temperature: f32,
+    pub is_plan_mode: bool,
+    pub active_prompts: Vec<String>,
+    pub tool_call_metadata:
+        Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
     /// Number of tool calls made in the current turn
     pub tool_call_count: usize,
     /// Maximum tool calls per turn (None = unlimited)

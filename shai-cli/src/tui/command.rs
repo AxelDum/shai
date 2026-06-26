@@ -138,8 +138,7 @@ impl App<'_> {
             "/regenerate" => {
                 if let Some(ref agent) = self.agent {
                     let _ = agent.controller.regenerate().await;
-                    self
-                        .notify("Regenerating last response...", Duration::from_secs(2));
+                    self.notify("Regenerating last response...", Duration::from_secs(2));
                 }
             }
             "/temp" => {
@@ -161,13 +160,11 @@ impl App<'_> {
                                 }
                             },
                             Err(_) => {
-                                self
-                                    .notify("Usage: /temp <float>", Duration::from_secs(3));
+                                self.notify("Usage: /temp <float>", Duration::from_secs(3));
                             }
                         },
                         None => {
-                            self
-                                .notify("Usage: /temp <float>", Duration::from_secs(3));
+                            self.notify("Usage: /temp <float>", Duration::from_secs(3));
                         }
                     }
                 }
@@ -187,15 +184,13 @@ impl App<'_> {
                     self.theme = Theme::Dark;
                     let new_palette = self.theme.palette();
                     self.input.set_palette(new_palette);
-                    self
-                        .notify("Theme set to dark", Duration::from_secs(2));
+                    self.notify("Theme set to dark", Duration::from_secs(2));
                 }
                 Some("light") => {
                     self.theme = Theme::Light;
                     let new_palette = self.theme.palette();
                     self.input.set_palette(new_palette);
-                    self
-                        .notify("Theme set to light", Duration::from_secs(2));
+                    self.notify("Theme set to light", Duration::from_secs(2));
                 }
                 Some("toggle") => {
                     self.theme.toggle();
@@ -211,8 +206,7 @@ impl App<'_> {
                     );
                 }
                 _ => {
-                    self
-                        .notify("Usage: /theme [dark|light|toggle]", Duration::from_secs(3));
+                    self.notify("Usage: /theme [dark|light|toggle]", Duration::from_secs(3));
                 }
             },
             "/restore" => {
@@ -268,12 +262,12 @@ impl App<'_> {
                                     Duration::from_secs(2),
                                 );
                             } else {
-                                self
-                                    .notify("Invalid session number", Duration::from_secs(2));
+                                self.notify("Invalid session number", Duration::from_secs(2));
                             }
                         } else {
                             // Open the session picker
-                            let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
+                            let mut picker =
+                                SessionPicker::new(sessions.clone(), self.theme.palette());
                             if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
                                 if let Some(session) = sessions.get(idx) {
                                     self.restore_session(&session.session_id).await?;
@@ -282,8 +276,7 @@ impl App<'_> {
                         }
                     }
                     Ok(_) => {
-                        self
-                            .notify("No saved sessions found", Duration::from_secs(2));
+                        self.notify("No saved sessions found", Duration::from_secs(2));
                     }
                     Err(e) => {
                         self.notify(
@@ -328,8 +321,7 @@ impl App<'_> {
                         );
                     }
                     Ok(_) => {
-                        self
-                            .notify("No saved sessions found", Duration::from_secs(2));
+                        self.notify("No saved sessions found", Duration::from_secs(2));
                     }
                     Err(e) => {
                         self.notify(
@@ -342,8 +334,7 @@ impl App<'_> {
             "/skills" => {
                 let skills = shai_core::tools::skills::discovery::discover_skills();
                 if skills.is_empty() {
-                    self
-                        .notify("No skills found.", Duration::from_secs(3));
+                    self.notify("No skills found.", Duration::from_secs(3));
                 } else {
                     let mut msg = String::from("\x1b[1mAvailable skills:\x1b[0m\n");
                     for skill in &skills {
@@ -368,8 +359,7 @@ impl App<'_> {
                 }
             }
             _ => {
-                self
-                    .notify("command unknown", Duration::from_secs(1));
+                self.notify("command unknown", Duration::from_secs(1));
             }
         }
         Ok(())

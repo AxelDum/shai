@@ -454,14 +454,13 @@ impl AgentCore {
                         Ok(AgentResponse::Ack)
                     })
             }
-            AgentRequest::StopCurrentTask => {
-                self.handle_event(InternalAgentEvent::CancelTask)
-                    .await
-                    .and({
-                        self.set_state(InternalAgentState::Paused).await;
-                        Ok(AgentResponse::Ack)
-                    })
-            }
+            AgentRequest::StopCurrentTask => self
+                .handle_event(InternalAgentEvent::CancelTask)
+                .await
+                .and({
+                    self.set_state(InternalAgentState::Paused).await;
+                    Ok(AgentResponse::Ack)
+                }),
             AgentRequest::Regenerate => {
                 self.handle_event(InternalAgentEvent::CancelTask)
                     .await

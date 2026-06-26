@@ -109,7 +109,9 @@ impl AgentCore {
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
         read_cache: Arc<RwLock<Vec<(String, String)>>>,
         max_cached_reads: usize,
-        tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
+        tool_call_metadata: Arc<
+            RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>,
+        >,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();

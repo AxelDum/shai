@@ -17,7 +17,7 @@ use crate::tools::{
 };
 use shai_llm::tool::LlmToolCall;
 
-use super::prompt::{render_system_prompt_template, get_todo_read, PLAN_MODE_PROMPT};
+use super::prompt::{get_todo_read, render_system_prompt_template, PLAN_MODE_PROMPT};
 use crate::runners::compacter::compact_trace_if_needed;
 
 #[derive(Clone)]
@@ -146,10 +146,13 @@ impl Brain for CoderBrain {
             }
         }
 
-        trace.insert(0, ChatMessage::System {
-            content: ChatMessageContent::Text(system_prompt_full),
-            name: None,
-        });
+        trace.insert(
+            0,
+            ChatMessage::System {
+                content: ChatMessageContent::Text(system_prompt_full),
+                name: None,
+            },
+        );
 
         // get next step with custom temperature
         debug!(target: "brain::coder", temperature = context.temperature, "temperature");

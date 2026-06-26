@@ -95,6 +95,9 @@ pub struct App<'a> {
     // Last tool result for expandable viewer
     pub(crate) last_tool_output: Option<String>,
     pub(crate) last_tool_file_path: Option<String>,
+
+    // Session picker modal
+    pub(crate) session_picker: Option<SessionPicker>,
 }
 
 // Agent-related Internals
@@ -391,6 +394,7 @@ impl App<'_> {
             last_assistant_response: String::new(),
             last_tool_output: None,
             last_tool_file_path: None,
+            session_picker: None,
         }
     }
 
@@ -519,6 +523,15 @@ impl App<'_> {
                     terminal.clear()?;
                 }
             }
+            Event::Mouse(mouse_event) => match mouse_event.kind {
+                MouseEventKind::ScrollUp => {
+                    self.history.scroll_up(3);
+                }
+                MouseEventKind::ScrollDown => {
+                    self.history.scroll_down(3);
+                }
+                _ => {}
+            },
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 // Handle scroll keys without resetting scroll position
                 let ctrl = key_event
@@ -547,16 +560,67 @@ impl App<'_> {
                 self.history.scroll_to_bottom();
                 self.handle_key_event(key_event).await?;
             }
-            Event::Mouse(mouse_event) => match mouse_event.kind {
-                MouseEventKind::ScrollUp => {
-                    self.history.scroll_up(3);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.history.scroll_down(3);
-                }
-                _ => {}
-            },
             _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_session_picker_key(&mut self, key_event: KeyEvent) -> io::Result<()> {
+        use super::session_picker::SessionPickerAction;
+
+        let picker = self.session_picker.as_mut().unwrap();
+        match picker.handle_key_event(key_event) {
+            Some(SessionPickerAction::Selected(idx)) => {
+                // Retrieve the session data before dropping the picker
+                let sessions = shai_core::session::SessionPersist::list_sessions();
+                self.session_picker = None;
+                match sessions {
+                    Ok(sessions) if idx < sessions.len() => {
+                        let session = &sessions[idx];
+                        let session_id = session.session_id.clone();
+                        let trace = session.trace.clone();
+
+                        self.input.alert_msg(
+                            &format!("Restoring session {}...", &session_id[..8]),
+                            Duration::from_secs(2),
+                        );
+
+                        // Drop existing agent
+                        if let Some(agent) = self.agent.take() {
+                            let _ = agent.controller.terminate().await;
+                        }
+
+                        // Start new agent
+                        let agent_name = self.agent_name.clone();
+                        self.start_agent(agent_name.as_deref()).await.map_err(|e| {
+                            io::Error::other(format!("Failed to start agent: {}", e))
+                        })?;
+
+                        // Load the trace into the agent
+                        if let Some(ref agent) = self.agent {
+                            let _ = agent.controller.load_trace(trace.clone()).await;
+                        }
+
+                        // Render the trace into the TUI
+                        self.session_id = session_id.clone();
+                        self.render_restored_trace(&trace);
+
+                        self.input.alert_msg(
+                            &format!("Session {} restored", &session_id[..8]),
+                            Duration::from_secs(2),
+                        );
+                    }
+                    _ => {
+                        self.input
+                            .alert_msg("Failed to restore session", Duration::from_secs(2));
+                    }
+                }
+            }
+            Some(SessionPickerAction::Cancelled) => {
+                self.session_picker = None;
+            }
+            None => {}
+
         }
         Ok(())
     }
@@ -573,6 +637,11 @@ impl App<'_> {
         {
             self.exit = true;
             return Ok(());
+        }
+
+        // Handle session picker modal
+        if self.session_picker.is_some() {
+            return self.handle_session_picker_key(key_event).await;
         }
 
         // Handle theme toggle with Ctrl+T
@@ -673,13 +742,9 @@ impl App<'_> {
                 .modifiers
                 .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            let sessions = shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
-            let mut picker = SessionPicker::new(sessions.clone(), self.theme.palette());
-            if let Ok(SessionPickerAction::Selected(idx)) = picker.run().await {
-                if let Some(session) = sessions.get(idx) {
-                    self.restore_session(&session.session_id).await?;
-                }
-            }
+            let sessions = shai_core::session::SessionPersist::list_sessions()
+                .unwrap_or_default();
+            self.session_picker = Some(SessionPicker::new(sessions, self.theme.palette()));
             return Ok(());
         }
 
@@ -885,6 +950,17 @@ impl App<'_> {
 
                 // draw status bar
                 self.status_bar.draw(frame, statusbar_area);
+
+                // draw session picker overlay if active
+                if let Some(ref mut picker) = self.session_picker {
+                    let picker_area = Rect {
+                        x: 2,
+                        y: 1,
+                        width: frame.area().width.saturating_sub(4),
+                        height: frame.area().height.saturating_sub(2),
+                    };
+                    picker.draw(frame, picker_area);
+                }
             })?;
         }
 

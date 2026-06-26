@@ -85,13 +85,11 @@ impl ConversationHistory {
             return;
         }
 
-        let total_lines = self.lines.len();
-
-        // Calculate which logical lines to display.
-        // scroll_offset = 0 means showing the latest lines (bottom).
-        let end = total_lines.saturating_sub(self.scroll_offset);
-        let start = end.saturating_sub(visible_height);
-
+        // Build the combined text — newest lines are at the bottom.
+        // We render all lines and use Paragraph::scroll to shift the viewport
+        // up by scroll_offset lines from the bottom.
+        let start = 0;
+        let end = self.lines.len();
         let combined: String = self
             .lines
             .range(start..end)
@@ -100,10 +98,44 @@ impl ConversationHistory {
             .join("\n");
 
         if let Ok(text) = combined.into_text() {
-            let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+            // Calculate total rendered rows accounting for line wrapping.
+            // Each logical line may occupy multiple rendered rows when wrapped
+            // to the area width.
+            let width = area.width as usize;
+            let total_rendered_rows: usize = if width == 0 {
+                self.lines.len()
+            } else {
+                text.lines
+                    .iter()
+                    .map(|line| {
+                        let w = line.width();
+                        if w == 0 {
+                            1
+                        } else {
+                            w.div_ceil(width).max(1)
+                        }
+                    })
+                    .sum()
+            };
+
+            // Calculate how many rows to skip from the top.
+            // scroll_offset = 0 means showing the latest lines (bottom).
+            let skip_from_top = total_rendered_rows
+                .saturating_sub(self.scroll_offset + visible_height)
+                .min(u16::MAX as usize);
+
+            let paragraph = Paragraph::new(text)
+                .wrap(Wrap { trim: false })
+                .scroll((skip_from_top as u16, 0));
             f.render_widget(paragraph, area);
         } else {
-            let paragraph = Paragraph::new(combined).wrap(Wrap { trim: false });
+            let total_lines = self.lines.len();
+            let skip_from_top = total_lines
+                .saturating_sub(self.scroll_offset + visible_height)
+                .min(u16::MAX as usize);
+            let paragraph = Paragraph::new(combined)
+                .wrap(Wrap { trim: false })
+                .scroll((skip_from_top as u16, 0));
             f.render_widget(paragraph, area);
         }
     }

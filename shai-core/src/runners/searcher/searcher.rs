@@ -58,7 +58,7 @@ impl Brain for SearcherBrain {
         context: ThinkerContext,
         _budget: crate::agent::brain::ToolBudgetRef,
     ) -> Result<ThinkerDecision, AgentError> {
-        let mut trace = context.trace.read().await.clone();
+        let mut trace = context.trace.clone();
 
         trace.insert(
             0,

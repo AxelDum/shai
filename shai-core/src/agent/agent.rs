@@ -62,6 +62,69 @@ pub struct ToolCallInfo {
     pub primary_param: Option<String>,
 }
 
+/// Caches tool execution results for duplicate detection and smart compaction.
+/// All fields are behind Arc so the struct is cheaply cloneable for sub-agents.
+#[derive(Clone)]
+pub struct ToolCache {
+    /// Cache of recently executed bash commands for duplicate detection
+    pub command_cache: Arc<RwLock<Vec<(String, String)>>>,
+    /// Cache of recently read files for duplicate detection
+    pub read_cache: Arc<RwLock<Vec<(String, String)>>>,
+    /// Maps tool_call_id → tool call metadata for smart compaction messages
+    pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, ToolCallInfo>>>,
+    pub max_cached_commands: usize,
+    pub max_cached_reads: usize,
+}
+
+impl ToolCache {
+    pub fn new(compaction_config: &CompactionConfig) -> Self {
+        Self {
+            command_cache: Arc::new(RwLock::new(Vec::new())),
+            read_cache: Arc::new(RwLock::new(Vec::new())),
+            tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            max_cached_commands: compaction_config.max_cached_commands,
+            max_cached_reads: compaction_config.max_cached_reads,
+        }
+    }
+}
+
+/// Tracks tool call counts and limits for the agent loop.
+/// All fields are behind Arc so the struct is cheaply cloneable for sub-agents.
+#[derive(Clone)]
+pub struct ToolBudget {
+    /// Number of tool calls made in the current turn
+    pub count: Arc<RwLock<usize>>,
+    /// Maximum tool calls per turn (None = unlimited)
+    pub max_calls: Option<usize>,
+    /// Soft budget threshold (max_calls / 2). Warnings and critical notices are based on this.
+    pub soft_limit: Option<usize>,
+}
+
+impl ToolBudget {
+    pub fn new(max_calls: Option<usize>) -> Self {
+        Self {
+            count: Arc::new(RwLock::new(0)),
+            max_calls,
+            soft_limit: max_calls.map(|m| m / 2),
+        }
+    }
+
+    pub async fn increment(&self, n: usize) {
+        *self.count.write().await += n;
+    }
+
+    pub async fn reset(&self) {
+        *self.count.write().await = 0;
+    }
+
+    pub async fn is_at_limit(&self) -> bool {
+        match self.max_calls {
+            Some(max) => *self.count.read().await >= max,
+            None => false,
+        }
+    }
+}
+
 /// Core agent implementation that orchestrates any Thinker implementation
 pub struct AgentCore {
     pub session_id: String,
@@ -84,18 +147,9 @@ pub struct AgentCore {
     pub fs_operation_log: Arc<FsOperationLog>,
     pub working_dir: Option<String>,
 
-    /// Tracks tool calls since last user input for max_tool_calls_per_turn limit
-    pub tool_call_count: Arc<RwLock<usize>>,
-
-    /// Cache of recently executed bash commands for duplicate detection
-    /// Each entry is (normalized_command, compacted_output)
-    pub command_cache: Arc<RwLock<Vec<(String, String)>>>,
+    pub tool_cache: ToolCache,
+    pub tool_budget: ToolBudget,
     pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
-    /// Cache of recently read files for duplicate detection
-    /// Each entry is (cache_key, formatted_output)
-    pub read_cache: Arc<RwLock<Vec<(String, String)>>>,
-    /// Maps tool_call_id → tool call metadata for smart compaction messages
-    pub tool_call_metadata: Arc<RwLock<std::collections::HashMap<String, ToolCallInfo>>>,
 
     /// internal event
     pub internal_tx: broadcast::Sender<InternalAgentEvent>, // event may be produced from many part of the agent
@@ -123,6 +177,8 @@ impl AgentCore {
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
     ) -> Self {
         let (internal_tx, internal_rx) = broadcast::channel(1024);
+        let tool_cache = ToolCache::new(&compaction_config);
+        let tool_budget = ToolBudget::new(compaction_config.max_tool_calls_per_turn);
         Self {
             session_id: session_id.clone(),
             socket: AgentSocket {
@@ -145,11 +201,9 @@ impl AgentCore {
             verification_config,
             fs_operation_log,
             working_dir,
-            tool_call_count: Arc::new(RwLock::new(0)),
-            command_cache: Arc::new(RwLock::new(Vec::new())),
+            tool_cache,
+            tool_budget,
             todo_storage,
-            read_cache: Arc::new(RwLock::new(Vec::new())),
-            tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
             internal_tx,
             internal_rx,
         }
@@ -511,7 +565,7 @@ impl AgentCore {
                         });
 
                         // Reset tool call counter for the new turn
-                        *self.tool_call_count.write().await = 0;
+                        self.tool_budget.reset().await;
 
                         self.set_state(InternalAgentState::Running).await;
                         Ok(AgentResponse::Ack)
@@ -525,7 +579,7 @@ impl AgentCore {
                         self.trace.write().await.extend(messages);
 
                         // Reset tool call counter for the new turn
-                        *self.tool_call_count.write().await = 0;
+                        self.tool_budget.reset().await;
 
                         self.set_state(InternalAgentState::Running).await;
                         Ok(AgentResponse::Ack)

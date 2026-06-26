@@ -7,6 +7,7 @@ use openai_dive::v1::resources::chat::{
 use shai_llm::client::LlmClient;
 use tracing::debug;
 
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::brain::ThinkerDecision;
 use crate::agent::{AgentBuilder, AgentCore, AgentError, Brain, ThinkerContext};
 use crate::tools::skills::SkillTool;
@@ -60,7 +61,11 @@ impl CoderBrain {
 
 #[async_trait]
 impl Brain for CoderBrain {
-    async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        context: ThinkerContext,
+        budget: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         let mut trace = context.trace.read().await.clone();
 
         // Apply session-level trace compaction if needed
@@ -104,8 +109,8 @@ impl Brain for CoderBrain {
         }
 
         // Inject dynamic budget awareness hints
-        let tool_calls = context.tool_call_count;
-        if let Some(soft_budget) = context.soft_tool_calls {
+        let tool_calls = budget.count;
+        if let Some(soft_budget) = budget.soft_limit {
             if tool_calls >= soft_budget {
                 // Critical notice every 5 calls once soft budget is exceeded
                 if tool_calls == soft_budget || (tool_calls - soft_budget) % 5 == 0 {

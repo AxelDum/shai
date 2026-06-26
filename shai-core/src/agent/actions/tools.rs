@@ -30,11 +30,7 @@ impl AgentCore {
         let trace = self.trace.clone();
         let compaction_config = self.compaction_config.clone();
         let working_dir = self.working_dir.clone();
-        let command_cache = self.command_cache.clone();
-        let read_cache = self.read_cache.clone();
-        let max_cached_commands = self.compaction_config.max_cached_commands;
-        let max_cached_reads = self.compaction_config.max_cached_reads;
-        let tool_call_metadata = self.tool_call_metadata.clone();
+        let tool_cache = self.tool_cache.clone();
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
@@ -51,12 +47,8 @@ impl AgentCore {
                 trace.clone(),
                 compaction_config.clone(),
                 working_dir.clone(),
-                command_cache.clone(),
-                max_cached_commands,
+                tool_cache.clone(),
                 self.todo_storage.clone(),
-                read_cache.clone(),
-                max_cached_reads,
-                tool_call_metadata.clone(),
             );
             join_handles.push(handle);
         }
@@ -104,14 +96,8 @@ impl AgentCore {
         trace: Arc<RwLock<Vec<ChatMessage>>>,
         compaction_config: crate::config::agent::CompactionConfig,
         working_dir: Option<String>,
-        command_cache: Arc<RwLock<Vec<(String, String)>>>,
-        max_cached_commands: usize,
+        tool_cache: crate::agent::agent::ToolCache,
         todo_storage: Arc<crate::tools::todo::TodoStorage>,
-        read_cache: Arc<RwLock<Vec<(String, String)>>>,
-        max_cached_reads: usize,
-        tool_call_metadata: Arc<
-            RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>,
-        >,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
             let tc_for_error = tc.clone();
@@ -167,7 +153,7 @@ impl AgentCore {
 
                     // Check command cache
                     let cached_output = if let Some(ref cmd) = normalized_command {
-                        let cache = command_cache.read().await;
+                        let cache = tool_cache.command_cache.read().await;
                         cache
                             .iter()
                             .rev()
@@ -207,7 +193,7 @@ impl AgentCore {
                     };
 
                     let cached_read = if let Some(ref _key) = read_cache_key {
-                        let cache = read_cache.read().await;
+                        let cache = tool_cache.read_cache.read().await;
                         cache
                             .iter()
                             .rev()
@@ -258,9 +244,9 @@ impl AgentCore {
                                 &exec_result.to_string(),
                                 &compaction_config,
                             );
-                            let mut cache = command_cache.write().await;
+                            let mut cache = tool_cache.command_cache.write().await;
                             cache.push((cmd.clone(), compacted));
-                            if cache.len() > max_cached_commands {
+                            if cache.len() > tool_cache.max_cached_commands {
                                 cache.remove(0);
                             }
                         }
@@ -274,9 +260,9 @@ impl AgentCore {
                                     &exec_result.to_string(),
                                     &compaction_config,
                                 );
-                                let mut cache = read_cache.write().await;
+                                let mut cache = tool_cache.read_cache.write().await;
                                 cache.push((key.clone(), compacted));
-                                if cache.len() > max_cached_reads {
+                                if cache.len() > tool_cache.max_cached_reads {
                                     cache.remove(0);
                                 }
                             }
@@ -316,7 +302,7 @@ impl AgentCore {
                                     .unwrap_or_default()
                             };
                             if !edited_paths.is_empty() {
-                                let mut cache = read_cache.write().await;
+                                let mut cache = tool_cache.read_cache.write().await;
                                 cache.retain(|(key, _)| {
                                     !edited_paths
                                         .iter()
@@ -337,7 +323,7 @@ impl AgentCore {
                         &compaction_config,
                     );
                     {
-                        let mut metadata = tool_call_metadata.write().await;
+                        let mut metadata = tool_cache.tool_call_metadata.write().await;
                         metadata.insert(
                             call.tool_call_id.clone(),
                             crate::agent::agent::ToolCallInfo {

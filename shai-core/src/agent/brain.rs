@@ -18,12 +18,18 @@ pub struct ThinkerContext {
     pub active_prompts: Vec<String>,
     pub tool_call_metadata:
         Arc<RwLock<std::collections::HashMap<String, crate::agent::agent::ToolCallInfo>>>,
+}
+
+/// Read-only snapshot of tool call budget state, passed to the brain
+/// alongside ThinkerContext so it can make budget-aware decisions.
+#[derive(Clone, Copy)]
+pub struct ToolBudgetRef {
     /// Number of tool calls made in the current turn
-    pub tool_call_count: usize,
+    pub count: usize,
     /// Maximum tool calls per turn (None = unlimited)
-    pub max_tool_calls: Option<usize>,
-    /// Soft budget threshold (max_tool_calls / 2). Warnings and critical notices are based on this.
-    pub soft_tool_calls: Option<usize>,
+    pub max_calls: Option<usize>,
+    /// Soft budget threshold (max_calls / 2). Warnings and critical notices are based on this.
+    pub soft_limit: Option<usize>,
 }
 
 /// ThinkerFlowControl drives the agentic flow
@@ -104,5 +110,9 @@ impl ThinkerDecision {
 pub trait Brain: Send + Sync {
     /// This method is called at every step of the agent to decide next step
     /// note that if the message contains toolcall, it will always continue
-    async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError>;
+    async fn next_step(
+        &mut self,
+        context: ThinkerContext,
+        budget: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError>;
 }

@@ -1,4 +1,5 @@
 use super::coder::CoderBrain;
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{Agent, Brain, StdoutEventManager, ThinkerContext};
 use crate::config::config::ShaiConfig;
 use crate::logging::LoggingConfig;
@@ -87,12 +88,18 @@ async fn test_coder_brain_think_simple() {
         is_plan_mode: false,
         active_prompts: vec![],
         tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        tool_call_count: 0,
-        max_tool_calls: None,
-        soft_tool_calls: None,
     };
 
-    let result = brain.next_step(context).await;
+    let result = brain
+        .next_step(
+            context,
+            crate::agent::brain::ToolBudgetRef {
+                count: 0,
+                max_calls: None,
+                soft_limit: None,
+            },
+        )
+        .await;
     assert!(
         result.is_ok(),
         "Brain should successfully process simple message {:?}",

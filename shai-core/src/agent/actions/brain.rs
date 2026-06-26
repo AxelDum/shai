@@ -1,3 +1,4 @@
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{
     AgentCore, AgentError, AgentEvent, InternalAgentEvent, InternalAgentState, ThinkerContext,
     ThinkerDecision, ThinkerFlowControl,
@@ -20,9 +21,14 @@ impl AgentCore {
         let temperature = *self.temperature.read().await;
         let is_plan_mode = self.permissions.read().await.is_plan_mode();
         let active_prompts = self.permissions.read().await.active_prompts().to_vec();
-        let tool_call_count = *self.tool_call_count.read().await;
-        let max_tool_calls = self.compaction_config.max_tool_calls_per_turn;
-        let soft_tool_calls = max_tool_calls.map(|m| m / 2);
+        let tool_call_count = *self.tool_budget.count.read().await;
+        let max_tool_calls = self.tool_budget.max_calls;
+        let soft_tool_calls = self.tool_budget.soft_limit;
+        let budget = ToolBudgetRef {
+            count: tool_call_count,
+            max_calls: max_tool_calls,
+            soft_limit: soft_tool_calls,
+        };
         let context = ThinkerContext {
             trace,
             available_tools,
@@ -31,10 +37,7 @@ impl AgentCore {
             temperature,
             is_plan_mode,
             active_prompts,
-            tool_call_metadata: self.tool_call_metadata.clone(),
-            tool_call_count,
-            max_tool_calls,
-            soft_tool_calls,
+            tool_call_metadata: self.tool_cache.tool_call_metadata.clone(),
         };
         let brain = self.brain.clone();
 
@@ -42,7 +45,7 @@ impl AgentCore {
         tokio::spawn(async move {
             tokio::select! {
                 result = async {
-                    brain.write().await.next_step(context).await
+                    brain.write().await.next_step(context, budget).await
                 } => {
                     let _ = tx_clone.send(InternalAgentEvent::BrainResult {
                         result
@@ -117,8 +120,8 @@ impl AgentCore {
         let tool_calls_from_brain = tool_calls.unwrap_or(vec![]);
         if !tool_calls_from_brain.is_empty() {
             // Check max tool calls per turn limit
-            if let Some(max_tool_calls) = self.compaction_config.max_tool_calls_per_turn {
-                let mut count = self.tool_call_count.write().await;
+            if let Some(max_tool_calls) = self.tool_budget.max_calls {
+                let mut count = self.tool_budget.count.write().await;
                 if *count >= max_tool_calls {
                     // Drop the guard before calling set_state
                     drop(count);

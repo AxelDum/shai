@@ -7,11 +7,60 @@ use super::theme::Theme;
 use crate::tui::App;
 use ratatui::widgets::Widget;
 
+#[derive(Clone)]
 pub struct CommandDef {
     pub name: &'static str,
     pub description: &'static str,
     pub args: &'static [&'static str],
 }
+
+pub const COMMANDS: &[CommandDef] = &[
+    CommandDef {
+        name: "/exit",
+        description: "exit from the tui",
+        args: &[],
+    },
+    CommandDef {
+        name: "/tc",
+        description: "set the tool call method: [auto | fc | fc2 | so]",
+        args: &["method"],
+    },
+    CommandDef {
+        name: "/temp",
+        description: "set the sampling temperature (e.g. /temp 0.3)",
+        args: &["temperature"],
+    },
+    CommandDef {
+        name: "/tokens",
+        description: "display token usage (input/output)",
+        args: &[],
+    },
+    CommandDef {
+        name: "/theme",
+        description: "set theme: [dark | light | toggle]",
+        args: &["mode"],
+    },
+    CommandDef {
+        name: "/restore",
+        description: "restore a previous session",
+        args: &[],
+    },
+    CommandDef {
+        name: "/latest",
+        description: "restore the most recent session",
+        args: &[],
+    },
+    CommandDef {
+        name: "/skills",
+        description: "list available skills",
+        args: &[],
+    },
+    CommandDef {
+        name: "/regenerate",
+        description: "regenerate the last response",
+        args: &[],
+    },
+];
 
 pub struct CommandRegistry {
     commands: Vec<CommandDef>,
@@ -20,53 +69,7 @@ pub struct CommandRegistry {
 impl CommandRegistry {
     pub fn new() -> Self {
         Self {
-            commands: vec![
-                CommandDef {
-                    name: "/exit",
-                    description: "exit from the tui",
-                    args: &[],
-                },
-                CommandDef {
-                    name: "/tc",
-                    description: "set the tool call method: [auto | fc | fc2 | so]",
-                    args: &["method"],
-                },
-                CommandDef {
-                    name: "/temp",
-                    description: "set the sampling temperature (e.g. /temp 0.3)",
-                    args: &["temperature"],
-                },
-                CommandDef {
-                    name: "/tokens",
-                    description: "display token usage (input/output)",
-                    args: &[],
-                },
-                CommandDef {
-                    name: "/theme",
-                    description: "set theme: [dark | light | toggle]",
-                    args: &["mode"],
-                },
-                CommandDef {
-                    name: "/restore",
-                    description: "restore a previous session",
-                    args: &[],
-                },
-                CommandDef {
-                    name: "/latest",
-                    description: "restore the most recent session",
-                    args: &[],
-                },
-                CommandDef {
-                    name: "/skills",
-                    description: "list available skills",
-                    args: &[],
-                },
-                CommandDef {
-                    name: "/regenerate",
-                    description: "regenerate the last response",
-                    args: &[],
-                },
-            ],
+            commands: COMMANDS.to_vec(),
         }
     }
 

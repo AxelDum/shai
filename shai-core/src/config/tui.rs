@@ -175,6 +175,10 @@ fn parse_binding(s: &str) -> Result<KeyBinding, String> {
 }
 
 /// TUI shortcut configuration. All fields default to standard bindings.
+/// To add a new shortcut, add a line to the macro invocation below.
+/// TUI shortcut configuration. All fields default to standard bindings.
+/// To add a new shortcut, add a field with `#[serde(default = "fn_name")]`
+/// and a matching entry in the `Default` impl below.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShortcutsConfig {
     #[serde(default = "default_ctrl_t")]

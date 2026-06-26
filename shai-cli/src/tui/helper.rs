@@ -8,36 +8,65 @@ use ratatui::{
     Frame,
 };
 
+use super::command::COMMANDS;
+use shai_core::config::tui::{KeyBinding, TuiConfig};
+
 pub struct HelpArea;
+
+fn format_binding(binding: &KeyBinding) -> String {
+    binding.to_string()
+}
 
 impl HelpArea {
     fn helper_msg(&self) -> String {
-        [
-            "  ? to print help      tap esc twice to clear input",
-            "  / for commands       tap esc while agent is running to cancel",
-            "                       ctrl^c to exit",
-            "",
-            "  Available Commands:",
-            "  /exit                exit from the tui",
-            "  /tc <method>         set tool call method: [auto | fc | fc2 | so]",
-            "  /temp <float>        set the sampling temperature",
-            "  /tokens              display token usage",
-            "  /theme [dark|light|toggle]  set or toggle theme",
-            "  /restore [index|id]  restore a previous session",
-            "  /latest               restore the most recent session",
-            "  /skills              list available skills",
-            "  /regenerate          regenerate the last response",
-            "",
-            "  Shortcuts:",
-            "  Ctrl+T               toggle dark/light theme",
-            "  Ctrl+L               clear screen / reset viewport",
-            "  Ctrl+R               retry/regenerate last response",
-            "  Ctrl+K               copy last assistant response to clipboard",
-            "  Ctrl+V               paste from clipboard",
-            "  Alt+Enter            insert newline (multi-line input)",
-        ]
-        .join("\n")
-        .to_string()
+        let mut lines: Vec<String> = vec![
+            "  ? to print help      tap esc twice to clear input".to_string(),
+            "  / for commands       tap esc while agent is running to cancel".to_string(),
+            "                       ctrl^c to exit".to_string(),
+            String::new(),
+            "  Available Commands:".to_string(),
+        ];
+
+        for cmd in COMMANDS.iter() {
+            let args_suffix = if cmd.args.is_empty() {
+                String::new()
+            } else {
+                format!(" <{}>", cmd.args.join("> <"))
+            };
+            lines.push(format!("  {}{}\t{}", cmd.name, args_suffix, cmd.description));
+        }
+
+        lines.push(String::new());
+        lines.push("  Shortcuts:".to_string());
+
+        let config = TuiConfig::default();
+        let s = &config.shortcuts;
+        let bindings: [(&str, &str); 6] = [
+            ("toggle_theme", "toggle dark/light theme"),
+            ("clear_screen", "clear screen / reset viewport"),
+            ("regenerate", "retry/regenerate last response"),
+            ("copy_response", "copy last assistant response to clipboard"),
+            ("paste", "paste from clipboard"),
+            ("cycle_agent_mode", "cycle agent mode (Plan/Manual/Auto)"),
+        ];
+
+        let get_binding = |field: &str| -> &KeyBinding {
+            match field {
+                "toggle_theme" => &s.toggle_theme,
+                "clear_screen" => &s.clear_screen,
+                "regenerate" => &s.regenerate,
+                "copy_response" => &s.copy_response,
+                "paste" => &s.paste,
+                "cycle_agent_mode" => &s.cycle_agent_mode,
+                _ => unreachable!(),
+            }
+        };
+
+        for (field, desc) in bindings.iter() {
+            lines.push(format!("  {:<20} {}", format_binding(get_binding(field)), desc));
+        }
+
+        lines.join("\n")
     }
 }
 

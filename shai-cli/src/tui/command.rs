@@ -172,10 +172,10 @@ impl App<'_> {
             "/tokens" => {
                 let msg = format!(
                     "Token Usage - Input: {}, Output: {}, Cached: {}, Total: {}",
-                    self.total_input_tokens,
-                    self.total_output_tokens,
-                    self.total_cached_tokens,
-                    self.total_input_tokens + self.total_output_tokens
+                    self.token_counter.input_tokens(),
+                    self.token_counter.output_tokens(),
+                    self.token_counter.cached_tokens(),
+                    self.token_counter.total()
                 );
                 self.notify(&msg, Duration::from_secs(5));
             }
@@ -254,7 +254,7 @@ impl App<'_> {
                                 }
 
                                 // Render the trace into the TUI
-                                self.session_id = session.session_id.clone();
+                                self.session_manager.set_session_id(&session.session_id);
                                 self.render_restored_trace(&session.trace);
 
                                 self.notify(
@@ -311,7 +311,7 @@ impl App<'_> {
                         }
 
                         // Render the trace into the TUI
-                        self.session_id = session.session_id.clone();
+                        self.session_manager.set_session_id(&session.session_id);
                         self.render_restored_trace(&session.trace);
 
                         self.notify(

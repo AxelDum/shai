@@ -13,7 +13,7 @@ impl AgentCore {
     pub async fn spawn_next_step(&mut self) {
         let cancellation_token = CancellationToken::new();
         let cancel_token_clone = cancellation_token.clone();
-        let trace = self.tool_ctx.trace.clone();
+        let trace = self.tool_ctx.trace.read().await.clone();
         let tx_clone = self.tool_ctx.internal_tx.clone();
         let available_tools = self.tool_ctx.available_tools.clone();
         let method = self.method.clone();

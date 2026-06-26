@@ -77,10 +77,10 @@ async fn test_coder_brain_think_simple() {
 
     // Create test context with a simple message
     let context = ThinkerContext {
-        trace: Arc::new(RwLock::new(vec![ChatMessage::User {
+        trace: vec![ChatMessage::User {
             content: ChatMessageContent::Text("Say hello".to_string()),
             name: None,
-        }])),
+        }],
         available_tools: vec![],
         method: ToolCallMethod::FunctionCall,
         max_trace_chars: 50000,

@@ -9,7 +9,7 @@ use crate::tools::types::AnyToolBox;
 
 /// ThinkerContext is the agent internal state
 pub struct ThinkerContext {
-    pub trace: Arc<RwLock<Vec<ChatMessage>>>,
+    pub trace: Vec<ChatMessage>,
     pub available_tools: AnyToolBox,
     pub method: ToolCallMethod,
     pub max_trace_chars: usize,

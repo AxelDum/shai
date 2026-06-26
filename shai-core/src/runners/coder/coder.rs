@@ -61,7 +61,7 @@ impl Brain for CoderBrain {
         context: ThinkerContext,
         budget: ToolBudgetRef,
     ) -> Result<ThinkerDecision, AgentError> {
-        let mut trace = context.trace.read().await.clone();
+        let mut trace = context.trace.clone();
 
         // Apply session-level trace compaction if needed
         if context.max_trace_chars > 0 {

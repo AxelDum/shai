@@ -7,8 +7,8 @@ use openai_dive::v1::resources::chat::{
 use shai_llm::client::LlmClient;
 use tracing::debug;
 
-use crate::agent::brain::ToolBudgetRef;
 use crate::agent::brain::ThinkerDecision;
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{AgentBuilder, AgentCore, AgentError, Brain, ThinkerContext};
 use crate::tools::skills::SkillTool;
 use crate::tools::types::{ContainsAnyTool, IntoToolBox};

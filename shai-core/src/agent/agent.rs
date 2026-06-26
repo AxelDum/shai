@@ -125,6 +125,27 @@ impl ToolBudget {
     }
 }
 
+/// Bundles shared state passed to tool coroutines.
+/// All fields are behind Arc/Vec so the struct is cheaply cloneable for sub-agents.
+#[derive(Clone)]
+pub struct ToolContext {
+    // Communication
+    pub public_event_tx: Option<broadcast::Sender<AgentEvent>>,
+    pub internal_tx: broadcast::Sender<InternalAgentEvent>,
+    // Shared state
+    pub available_tools: Vec<Arc<dyn AnyTool>>,
+    pub trace: Arc<RwLock<Vec<ChatMessage>>>,
+    pub claims: Arc<RwLock<ClaimManager>>,
+    pub compaction_config: CompactionConfig,
+    pub verification_config: VerificationConfig,
+    pub working_dir: Option<String>,
+    pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
+    pub fs_operation_log: Arc<FsOperationLog>,
+    // Caching & budget
+    pub tool_cache: ToolCache,
+    pub tool_budget: ToolBudget,
+}
+
 /// Core agent implementation that orchestrates any Thinker implementation
 pub struct AgentCore {
     pub session_id: String,
@@ -137,30 +158,18 @@ pub struct AgentCore {
     pub method: ToolCallMethod,
     pub temperature: Arc<RwLock<f32>>,
 
-    /// agent state (manipulated by main looper + brain/tool coroutines)
-    pub trace: Arc<RwLock<Vec<ChatMessage>>>,
-    pub available_tools: Vec<Arc<dyn AnyTool>>,
-    pub permissions: Arc<RwLock<ClaimManager>>,
     pub state: InternalAgentState,
-    pub compaction_config: CompactionConfig,
-    pub verification_config: VerificationConfig,
-    pub fs_operation_log: Arc<FsOperationLog>,
-    pub working_dir: Option<String>,
-
-    pub tool_cache: ToolCache,
-    pub tool_budget: ToolBudget,
-    pub todo_storage: Arc<crate::tools::todo::TodoStorage>,
 
     /// internal event
-    pub internal_tx: broadcast::Sender<InternalAgentEvent>, // event may be produced from many part of the agent
-    pub internal_rx: broadcast::Receiver<InternalAgentEvent>, // events are mostly consumed by the main event loop, but also in spawn tool to monitor permissions
+    pub internal_rx: broadcast::Receiver<InternalAgentEvent>,
+
+    /// shared tool execution context
+    pub tool_ctx: ToolContext,
 }
 
 pub struct AgentSocket {
     pub tx_command: Option<mpsc::UnboundedSender<SentCommand>>, // might have multiple commander
     pub rx_command: Option<mpsc::UnboundedReceiver<SentCommand>>, // self is single consumer of command from main agent loop
-    pub tx_event: Option<broadcast::Sender<AgentEvent>>, // multiple producer of event from multiple thread within self
-    pub rx_event: Option<broadcast::Receiver<AgentEvent>>, // multiple event watcher
 }
 
 impl AgentCore {
@@ -184,46 +193,47 @@ impl AgentCore {
             socket: AgentSocket {
                 tx_command: None,
                 rx_command: None,
-                tx_event: None,
-                rx_event: None,
             },
             brain: Arc::new(RwLock::new(brain)),
             method: ToolCallMethod::FunctionCall,
             temperature: Arc::new(RwLock::new(0.0)),
-            trace: Arc::new(RwLock::new(trace)),
-            available_tools: available_tools
-                .into_iter()
-                .map(|t| Arc::from(t) as Arc<dyn AnyTool>)
-                .collect(),
-            permissions: Arc::new(RwLock::new(permissions)),
             state: InternalAgentState::Starting,
-            compaction_config,
-            verification_config,
-            fs_operation_log,
-            working_dir,
-            tool_cache,
-            tool_budget,
-            todo_storage,
-            internal_tx,
             internal_rx,
+            tool_ctx: ToolContext {
+                public_event_tx: None,
+                internal_tx,
+                available_tools: available_tools
+                    .into_iter()
+                    .map(|t| Arc::from(t) as Arc<dyn AnyTool>)
+                    .collect(),
+                trace: Arc::new(RwLock::new(trace)),
+                claims: Arc::new(RwLock::new(permissions)),
+                compaction_config,
+                verification_config,
+                working_dir,
+                todo_storage,
+                fs_operation_log,
+                tool_cache,
+                tool_budget,
+            },
         }
     }
 
     /// Enable sudo mode - bypasses all permission checks
     pub async fn sudo(&mut self) {
-        let mut guard = self.permissions.write().await;
+        let mut guard = self.tool_ctx.claims.write().await;
         guard.sudo();
     }
 
     /// Disable sudo mode - re-enables permission checks  
     pub async fn no_sudo(&mut self) {
-        let mut guard = self.permissions.write().await;
+        let mut guard = self.tool_ctx.claims.write().await;
         guard.no_sudo();
     }
 
     /// Check if sudo mode is enabled
     pub async fn is_sudo(&self) -> bool {
-        let guard = self.permissions.read().await;
+        let guard = self.tool_ctx.claims.read().await;
         guard.is_sudo()
     }
 }
@@ -276,17 +286,16 @@ impl AgentCore {
     }
 
     fn assert_socket_created(&mut self) {
-        if self.socket.tx_event.is_none() {
-            let (tx_event, rx_event) = broadcast::channel(1024);
-            self.socket.tx_event = Some(tx_event);
-            self.socket.rx_event = Some(rx_event);
+        if self.tool_ctx.public_event_tx.is_none() {
+            let (tx_event, _rx_event) = broadcast::channel(1024);
+            self.tool_ctx.public_event_tx = Some(tx_event);
         }
     }
 
     /// Get a new event channel
     pub fn watch(&mut self) -> broadcast::Receiver<AgentEvent> {
         self.assert_socket_created();
-        self.socket.tx_event.as_ref().unwrap().subscribe()
+        self.tool_ctx.public_event_tx.as_ref().unwrap().subscribe()
     }
 
     /// Register an anonymous closure to process event
@@ -295,7 +304,7 @@ impl AgentCore {
         F: Fn(AgentEvent) + Send + Sync + 'static,
     {
         self.assert_socket_created();
-        let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
+        let mut rx = self.tool_ctx.public_event_tx.as_ref().unwrap().subscribe();
         _ = tokio::spawn(async move {
             while let Ok(e) = rx.recv().await {
                 handler(e);
@@ -310,7 +319,7 @@ impl AgentCore {
         H: AgentEventHandler + 'static,
     {
         self.assert_socket_created();
-        let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
+        let mut rx = self.tool_ctx.public_event_tx.as_ref().unwrap().subscribe();
         _ = tokio::spawn(async move {
             while let Ok(event) = rx.recv().await {
                 handler.handle_event(event).await;
@@ -322,7 +331,7 @@ impl AgentCore {
     /// Handle WaitTurn command by spawning a task that waits for Paused state
     async fn handle_wait_turn(&mut self, response_channel: oneshot::Sender<AgentResponse>) {
         self.assert_socket_created();
-        let mut rx = self.socket.tx_event.as_ref().unwrap().subscribe();
+        let mut rx = self.tool_ctx.public_event_tx.as_ref().unwrap().subscribe();
         let current_state = self.state.to_public();
 
         // Check if already paused
@@ -387,7 +396,7 @@ impl AgentCore {
             match &self.state {
                 InternalAgentState::Completed { success } => {
                     debug!(target: "agent::terminated", "completed");
-                    let trace = self.trace.clone();
+                    let trace = self.tool_ctx.trace.clone();
                     let guard = trace.read().await;
                     return Ok(AgentResult {
                         success: success.clone(),
@@ -470,11 +479,11 @@ impl AgentCore {
                 state: self.state.to_public(),
             }),
             AgentRequest::GetTrace => {
-                let trace = self.trace.read().await.clone();
+                let trace = self.tool_ctx.trace.read().await.clone();
                 Ok(AgentResponse::Trace { trace })
             }
             AgentRequest::Sudo(operation) => {
-                let mut guard = self.permissions.write().await;
+                let mut guard = self.tool_ctx.claims.write().await;
                 match operation {
                     Some(true) => guard.sudo(),
                     Some(false) => guard.no_sudo(),
@@ -484,7 +493,7 @@ impl AgentCore {
                 Ok(AgentResponse::SudoStatus { enabled })
             }
             AgentRequest::PlanMode(operation) => {
-                let mut guard = self.permissions.write().await;
+                let mut guard = self.tool_ctx.claims.write().await;
                 match operation {
                     Some(true) => guard.plan_mode(),
                     Some(false) => guard.no_plan_mode(),
@@ -494,7 +503,7 @@ impl AgentCore {
                 Ok(AgentResponse::PlanModeStatus { enabled })
             }
             AgentRequest::SetActivePrompts(prompts) => {
-                let mut guard = self.permissions.write().await;
+                let mut guard = self.tool_ctx.claims.write().await;
                 guard.set_active_prompts(prompts);
                 let prompts = guard.active_prompts().to_vec();
                 Ok(AgentResponse::PromptsStatus { prompts })
@@ -522,7 +531,7 @@ impl AgentCore {
                         // Remove trailing assistant messages and tool calls to re-think
                         // from the last user message
                         {
-                            let mut trace = self.trace.write().await;
+                            let mut trace = self.tool_ctx.trace.write().await;
                             while let Some(msg) = trace.last() {
                                 match msg {
                                     ChatMessage::User { .. } => break,
@@ -559,13 +568,13 @@ impl AgentCore {
                             })
                             .await;
 
-                        self.trace.write().await.push(ChatMessage::User {
+                        self.tool_ctx.trace.write().await.push(ChatMessage::User {
                             content: ChatMessageContent::Text(input),
                             name: None,
                         });
 
                         // Reset tool call counter for the new turn
-                        self.tool_budget.reset().await;
+                        self.tool_ctx.tool_budget.reset().await;
 
                         self.set_state(InternalAgentState::Running).await;
                         Ok(AgentResponse::Ack)
@@ -576,10 +585,10 @@ impl AgentCore {
                     .await
                     .and({
                         // Add all messages to trace at once
-                        self.trace.write().await.extend(messages);
+                        self.tool_ctx.trace.write().await.extend(messages);
 
                         // Reset tool call counter for the new turn
-                        self.tool_budget.reset().await;
+                        self.tool_ctx.tool_budget.reset().await;
 
                         self.set_state(InternalAgentState::Running).await;
                         Ok(AgentResponse::Ack)
@@ -590,7 +599,7 @@ impl AgentCore {
                     .await
                     .and({
                         // Add all messages to trace at once
-                        self.trace.write().await.extend(messages);
+                        self.tool_ctx.trace.write().await.extend(messages);
 
                         // Stay paused - don't start thinking
                         Ok(AgentResponse::Ack)
@@ -602,6 +611,7 @@ impl AgentCore {
             } => {
                 // This event is managed by the spawn thread directly, thus sending to the broadcast internal event channel
                 let _ = self
+                    .tool_ctx
                     .internal_tx
                     .send(InternalAgentEvent::UserResponseReceived {
                         request_id: query_id,
@@ -616,6 +626,7 @@ impl AgentCore {
             } => {
                 // This event is managed by the spawn thread directly, thus sending to the broadcast internal event channel
                 let _ = self
+                    .tool_ctx
                     .internal_tx
                     .send(InternalAgentEvent::PermissionResponseReceived {
                         request_id: request_id,
@@ -676,7 +687,7 @@ impl AgentCore {
     /// Emit an event to the controller
     pub async fn emit_event(&self, event: AgentEvent) -> Result<(), AgentError> {
         // ignore if no receiver or if all receiver are dropped
-        if let Some(tx) = &self.socket.tx_event {
+        if let Some(tx) = &self.tool_ctx.public_event_tx {
             debug!(target: "agent::public_event", event = ?event);
             let _ = tx.send(event).map_err(|_| AgentError::SessionClosed)?;
         }

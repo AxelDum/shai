@@ -21,35 +21,14 @@ impl AgentCore {
     pub async fn spawn_tools(&mut self, tool_calls: Vec<LlmToolCall>) {
         let cancellation_token = CancellationToken::new();
         let cancel_clone = cancellation_token.clone();
-        let internal_tx = self.internal_tx.clone();
-
-        // Clone all needed data from self before spawning
-        let public_event_tx = self.socket.tx_event.clone();
-        let available_tools = self.available_tools.clone();
-        let claims = self.permissions.clone();
-        let trace = self.trace.clone();
-        let compaction_config = self.compaction_config.clone();
-        let working_dir = self.working_dir.clone();
-        let tool_cache = self.tool_cache.clone();
+        let tool_ctx = self.tool_ctx.clone();
 
         // Spawn a task to wait for all tool executions
         let mut join_handles = Vec::new();
 
         // Spawn all tool executions
         for tc in tool_calls {
-            let handle = Self::spawn_tool_static(
-                tc,
-                cancel_clone.clone(),
-                public_event_tx.clone(),
-                available_tools.clone(),
-                claims.clone(),
-                internal_tx.clone(),
-                trace.clone(),
-                compaction_config.clone(),
-                working_dir.clone(),
-                tool_cache.clone(),
-                self.todo_storage.clone(),
-            );
+            let handle = Self::spawn_tool_static(tc, cancel_clone.clone(), tool_ctx.clone());
             join_handles.push(handle);
         }
 
@@ -70,7 +49,7 @@ impl AgentCore {
                     result
                 } => {
                     // All tools completed, move to Running state
-                    let _ = internal_tx.send(InternalAgentEvent::ToolsCompleted { any_denied });
+                    let _ = tool_ctx.internal_tx.send(InternalAgentEvent::ToolsCompleted { any_denied });
                 }
             }
         });
@@ -89,19 +68,18 @@ impl AgentCore {
     fn spawn_tool_static(
         tc: LlmToolCall,
         cancel_token: CancellationToken,
-        public_event_tx: Option<broadcast::Sender<AgentEvent>>,
-        available_tools: Vec<Arc<dyn AnyTool>>,
-        claims: Arc<RwLock<ClaimManager>>,
-        internal_tx: broadcast::Sender<InternalAgentEvent>,
-        trace: Arc<RwLock<Vec<ChatMessage>>>,
-        compaction_config: crate::config::agent::CompactionConfig,
-        working_dir: Option<String>,
-        tool_cache: crate::agent::agent::ToolCache,
-        todo_storage: Arc<crate::tools::todo::TodoStorage>,
+        tool_ctx: crate::agent::agent::ToolContext,
     ) -> tokio::task::JoinHandle<bool> {
         tokio::spawn(async move {
+            let public_event_tx = &tool_ctx.public_event_tx;
+            let tool_cache = &tool_ctx.tool_cache;
+            let trace = &tool_ctx.trace;
+            let compaction_config = &tool_ctx.compaction_config;
+            let working_dir = &tool_ctx.working_dir;
+            let todo_storage = &tool_ctx.todo_storage;
+
             let tc_for_error = tc.clone();
-            match Self::tool_exist(available_tools, tc) {
+            match Self::tool_exist(tool_ctx.available_tools.clone(), tc) {
                 // tool does not exist, we fail immediately
                 Err(tool_result) => {
                     if let Some(tx) = public_event_tx.clone() {
@@ -214,9 +192,9 @@ impl AgentCore {
                             tool,
                             call.clone(),
                             cancel_token.clone(),
-                            claims,
+                            tool_ctx.claims.clone(),
                             public_event_tx.clone(),
-                            internal_tx.subscribe(),
+                            tool_ctx.internal_tx.subscribe(),
                         );
 
                         // wait for result (or for cancellation)
@@ -242,7 +220,7 @@ impl AgentCore {
                                 &call.tool_name,
                                 exec_result.metadata(),
                                 &exec_result.to_string(),
-                                &compaction_config,
+                                compaction_config,
                             );
                             let mut cache = tool_cache.command_cache.write().await;
                             cache.push((cmd.clone(), compacted));
@@ -258,7 +236,7 @@ impl AgentCore {
                                     &call.tool_name,
                                     exec_result.metadata(),
                                     &exec_result.to_string(),
-                                    &compaction_config,
+                                    compaction_config,
                                 );
                                 let mut cache = tool_cache.read_cache.write().await;
                                 cache.push((key.clone(), compacted));
@@ -320,7 +298,7 @@ impl AgentCore {
                         &call.tool_name,
                         result.metadata(),
                         &raw_output,
-                        &compaction_config,
+                        compaction_config,
                     );
                     {
                         let mut metadata = tool_cache.tool_call_metadata.write().await;

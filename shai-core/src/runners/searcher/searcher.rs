@@ -53,7 +53,11 @@ impl SearcherBrain {
 
 #[async_trait]
 impl Brain for SearcherBrain {
-    async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        context: ThinkerContext,
+        _budget: crate::agent::brain::ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         let mut trace = context.trace.read().await.clone();
 
         trace.insert(

@@ -120,26 +120,21 @@ impl AgentCore {
         let tool_calls_from_brain = tool_calls.unwrap_or(vec![]);
         if !tool_calls_from_brain.is_empty() {
             // Check max tool calls per turn limit
-            if let Some(max_tool_calls) = self.tool_ctx.tool_budget.max_calls {
-                let mut count = self.tool_ctx.tool_budget.count.write().await;
-                if *count >= max_tool_calls {
-                    // Drop the guard before calling set_state
-                    drop(count);
-                    // Inject a wrap-up message for each tool call to satisfy the LLM's tool_call_id requirements
-                    let wrap_up = format!(
-                        "You have reached the maximum number of tool calls ({}) for this turn. Please summarize what you've accomplished and provide your final answer.",
-                        max_tool_calls
-                    );
-                    for tc in &tool_calls_from_brain {
-                        self.tool_ctx.trace.write().await.push(ChatMessage::Tool {
-                            tool_call_id: tc.id.clone(),
-                            content: ChatMessageContent::Text(wrap_up.clone()),
-                        });
-                    }
-                    self.set_state(InternalAgentState::Running).await;
-                    return Ok(());
+            if !self.tool_ctx.tool_budget.try_increment(tool_calls_from_brain.len()).await {
+                let max_tool_calls = self.tool_ctx.tool_budget.max_calls.unwrap();
+                // Inject a wrap-up message for each tool call to satisfy the LLM's tool_call_id requirements
+                let wrap_up = format!(
+                    "You have reached the maximum number of tool calls ({}) for this turn. Please summarize what you've accomplished and provide your final answer.",
+                    max_tool_calls
+                );
+                for tc in &tool_calls_from_brain {
+                    self.tool_ctx.trace.write().await.push(ChatMessage::Tool {
+                        tool_call_id: tc.id.clone(),
+                        content: ChatMessageContent::Text(wrap_up.clone()),
+                    });
                 }
-                *count += tool_calls_from_brain.len();
+                self.set_state(InternalAgentState::Running).await;
+                return Ok(());
             }
             self.spawn_tools(tool_calls_from_brain).await;
             return Ok(());

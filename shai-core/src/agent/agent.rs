@@ -123,6 +123,19 @@ impl ToolBudget {
             None => false,
         }
     }
+
+    /// Atomically checks the limit and increments by `n` if not at limit.
+    /// Returns `false` if at limit (count unchanged), `true` if increment succeeded.
+    pub async fn try_increment(&self, n: usize) -> bool {
+        let mut count = self.count.write().await;
+        if let Some(max) = self.max_calls {
+            if *count >= max {
+                return false;
+            }
+        }
+        *count += n;
+        true
+    }
 }
 
 /// Bundles shared state passed to tool coroutines.

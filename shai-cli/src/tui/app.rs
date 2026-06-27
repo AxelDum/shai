@@ -39,6 +39,7 @@ use tracing::{debug, warn};
 use super::command::CommandRegistry;
 use super::history::ConversationHistory;
 use super::input::{AgentMode, UserAction};
+use super::mcp_manager::McpManager;
 use super::perm::PermissionModalAction;
 use super::perm_manager::PermissionManager;
 use super::session_manager::SessionManager;
@@ -62,6 +63,7 @@ pub struct AppRunningAgent {
     pub(crate) handle: JoinHandle<()>,
     pub(crate) events: broadcast::Receiver<AgentEvent>,
     pub(crate) controller: AgentController,
+    pub(crate) tools: Vec<(String, String)>,
 }
 
 pub struct App<'a> {
@@ -76,6 +78,7 @@ pub struct App<'a> {
     pub(crate) input: InputArea<'a>, // input text
     pub(crate) command_registry: CommandRegistry,
     pub(crate) shortcuts: Shortcuts,
+    pub(crate) mcp_manager: McpManager,
     pub(crate) exit: bool,
     pub(crate) permission_manager: PermissionManager,
 
@@ -114,6 +117,7 @@ impl App<'_> {
 
             // Create agent from config
             let agent_builder = AgentBuilder::from_config(config).await?;
+            self.mcp_manager.set_servers(agent_builder.mcp_status.clone());
             Box::new(agent_builder.build())
         } else {
             // Use default coder agent
@@ -155,6 +159,7 @@ impl App<'_> {
             handle,
             controller: controller.clone(),
             events,
+            tools: Vec::new(),
         });
 
         // Restore saved active prompts
@@ -381,6 +386,7 @@ impl App<'_> {
             agent_provider: String::new(),
             agent_name: None,
             session_manager: SessionManager::new(),
+            mcp_manager: McpManager::new(),
             session_picker: None,
         }
     }

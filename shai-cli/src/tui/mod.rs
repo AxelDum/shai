@@ -27,3 +27,16 @@ pub mod ui_state;
 pub mod viewer;
 
 pub use app::App;
+
+#[cfg(test)]
+pub mod test_utils {
+    use shai_core::tools::ToolCall;
+
+    pub fn make_tool_call(id: &str, name: &str) -> ToolCall {
+        ToolCall {
+            tool_call_id: id.to_string(),
+            tool_name: name.to_string(),
+            parameters: serde_json::json!({"path": "/tmp/test.txt"}),
+        }
+    }
+}

@@ -1,49 +1,8 @@
 use super::gerund::gerund;
 use super::prompt::gerund_prompt;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
-use shai_llm::client::LlmClient;
 
-/// Try to get an LLM client from available environment variables, fallback to Ollama
-fn get_test_llm_client() -> LlmClient {
-    // Try each provider in order until one succeeds
-    if let Some(client) = LlmClient::from_env_ovhcloud() {
-        return client;
-    }
-    if let Some(client) = LlmClient::from_env_openai() {
-        return client;
-    }
-    if let Some(client) = LlmClient::from_env_anthropic() {
-        return client;
-    }
-    if let Some(client) = LlmClient::from_env_openrouter() {
-        return client;
-    }
-    if let Some(client) = LlmClient::from_env_openai_compatible() {
-        return client;
-    }
-    if let Some(client) = LlmClient::from_env_mistral() {
-        return client;
-    }
-
-    // Fallback to Ollama (always returns Some)
-    LlmClient::from_env_ollama().expect("Ollama should always be available as fallback")
-}
-
-async fn get_test_model_for_provider(client: &LlmClient) -> String {
-    // Use the provider's default model
-    client.default_model().await.unwrap_or_else(|_| {
-        // Fallback to common default models if API call fails
-        match client.provider_name() {
-            "openai" => "gpt-3.5-turbo".to_string(),
-            "anthropic" => "claude-3-haiku-20240307".to_string(),
-            "openrouter" => "openai/gpt-3.5-turbo".to_string(),
-            "ovhcloud" => "gpt-3.5-turbo".to_string(),
-            "mistral" => "mistral-tiny".to_string(),
-            "ollama" => "llama2".to_string(),
-            _ => "gpt-3.5-turbo".to_string(),
-        }
-    })
-}
+use crate::runners::test_helpers::{get_test_llm_client, get_test_model_for_provider};
 
 #[tokio::test]
 async fn test_gerund_with_simple_message() {

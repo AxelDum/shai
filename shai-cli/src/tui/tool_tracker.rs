@@ -73,15 +73,7 @@ impl Default for ToolTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    fn make_tool_call(id: &str, name: &str) -> ToolCall {
-        ToolCall {
-            tool_call_id: id.to_string(),
-            tool_name: name.to_string(),
-            parameters: json!({"path": "/tmp/test.txt"}),
-        }
-    }
+    use super::super::test_utils::make_tool_call;
 
     #[test]
     fn test_start_and_complete_tool() {

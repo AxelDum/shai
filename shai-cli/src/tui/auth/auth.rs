@@ -3,7 +3,8 @@ use super::config_list::ModalConfig;
 use super::config_model::ModalModel;
 use super::config_providers::ModalProviders;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use crossterm::terminal::disable_raw_mode;
+use crossterm::execute;
+use crossterm::terminal::{disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
 use ratatui::{
     layout::Rect, prelude::CrosstermBackend, Frame, Terminal, TerminalOptions, Viewport,
@@ -33,7 +34,6 @@ pub enum AuthState {
 pub struct AppAuth {
     terminal: Option<Terminal<CrosstermBackend<io::Stdout>>>,
     state: AuthState,
-    height: u16,
     exit: bool,
 }
 
@@ -45,12 +45,13 @@ impl AppAuth {
             terminal: None,
             state: AuthState::Start(config_list),
             exit: false,
-            height: 0_u16,
         }
     }
 
     pub async fn run(&mut self) {
         let result = self.try_run().await;
+
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = disable_raw_mode();
 
         if let Err(e) = result {
@@ -62,10 +63,9 @@ impl AppAuth {
     }
 
     pub async fn try_run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Initialize terminal with current modal height
-        self.height = self.height();
+        let _ = execute!(io::stdout(), EnterAlternateScreen);
         self.terminal = Some(ratatui::init_with_options(TerminalOptions {
-            viewport: Viewport::Inline(self.height),
+            viewport: Viewport::Fullscreen,
         }));
 
         let mut reader = crossterm::event::EventStream::new();
@@ -250,24 +250,8 @@ impl AppAuth {
         Ok(())
     }
 
-    fn height(&self) -> u16 {
-        match &self.state {
-            AuthState::Start(modal_config) => modal_config.height() as u16,
-            AuthState::SelectProvider(modal_providers) => modal_providers.height() as u16,
-            AuthState::EnvConfig(modal_envs) => modal_envs.height() as u16,
-            AuthState::ModelSelection(modal_model) => modal_model.height() as u16,
-            AuthState::Done => 5,
-        }
-    }
-
     fn draw_ui(&mut self) -> io::Result<()> {
-        let height = self.height();
         if let Some(ref mut terminal) = self.terminal {
-            if height != self.height {
-                self.height = height;
-                terminal.set_viewport_height(height)?;
-            }
-
             terminal.draw(|frame| {
                 let area = frame.area();
                 match &mut self.state {

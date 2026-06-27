@@ -26,32 +26,7 @@ pub struct PromptInfo {
 /// # Rest of the file...
 /// ```
 fn parse_prompt_frontmatter(content: &str) -> Option<(String, String)> {
-    let trimmed = content.trim_start();
-    if !trimmed.starts_with("---") {
-        return None;
-    }
-
-    let rest = &trimmed[3..];
-    let end = rest.find("\n---")?;
-    let frontmatter = &rest[..end];
-
-    let mut name = String::new();
-    let mut description = String::new();
-
-    for line in frontmatter.lines() {
-        let line = line.trim();
-        if let Some(val) = line.strip_prefix("name:") {
-            name = val.trim().trim_matches('"').to_string();
-        } else if let Some(val) = line.strip_prefix("description:") {
-            description = val.trim().trim_matches('"').to_string();
-        }
-    }
-
-    if name.is_empty() {
-        return None;
-    }
-
-    Some((name, description))
+    crate::tools::frontmatter::parse_frontmatter(content)
 }
 
 /// Strip the frontmatter block from a prompt file content, returning only the body.
@@ -223,42 +198,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
-
-    #[test]
-    fn test_parse_prompt_frontmatter_with_metadata() {
-        let content = r#"---
-name: my-prompt
-description: A test prompt
----
-
-# My Prompt
-
-Some content here.
-"#;
-        let result = parse_prompt_frontmatter(content);
-        assert!(result.is_some());
-        let (name, desc) = result.unwrap();
-        assert_eq!(name, "my-prompt");
-        assert_eq!(desc, "A test prompt");
-    }
-
-    #[test]
-    fn test_parse_prompt_frontmatter_no_frontmatter() {
-        let content = "# Just a heading\n\nNo frontmatter here.";
-        let result = parse_prompt_frontmatter(content);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_parse_prompt_frontmatter_quoted_values() {
-        let content =
-            "---\nname: \"quoted-name\"\ndescription: \"A quoted description\"\n---\n# Body";
-        let result = parse_prompt_frontmatter(content);
-        assert!(result.is_some());
-        let (name, desc) = result.unwrap();
-        assert_eq!(name, "quoted-name");
-        assert_eq!(desc, "A quoted description");
-    }
 
     #[test]
     fn test_strip_frontmatter() {

@@ -107,20 +107,13 @@ mod tests {
     use super::*;
     use super::super::handler::AgentHandler;
     use shai_core::agent::events::PermissionRequest;
-    use shai_core::tools::ToolCall;
 
-    fn make_tool_call(id: &str) -> ToolCall {
-        ToolCall {
-            tool_call_id: id.to_string(),
-            tool_name: "read".to_string(),
-            parameters: serde_json::json!({"path": "/tmp/test.txt"}),
-        }
-    }
+    use super::super::test_utils::make_tool_call;
 
     #[tokio::test]
     async fn test_handle_tool_started() {
         let mut state = AgentState::new();
-        let call = make_tool_call("tool1");
+        let call = make_tool_call("tool1", "read");
         let event = AgentEvent::ToolCallStarted {
             timestamp: chrono::Utc::now(),
             call,
@@ -149,7 +142,7 @@ mod tests {
         let request = PermissionRequest {
             tool_name: "read".to_string(),
             operation: "read file".to_string(),
-            call: make_tool_call("tool1"),
+            call: make_tool_call("tool1", "read"),
             preview: None,
         };
         let event = AgentEvent::PermissionRequired {

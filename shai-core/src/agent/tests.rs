@@ -3,24 +3,17 @@ use super::builder::AgentBuilder;
 use super::error::AgentError;
 use super::{AgentRequest, PublicAgentState, ThinkerDecision};
 use crate::agent::Agent;
-use crate::logging::LoggingConfig;
 use crate::tools::tool;
 use crate::tools::{AnyTool, LsTool, ReadTool, ToolResult};
 use async_trait::async_trait;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent, Function, ToolCall};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-static INIT_LOGGING: Once = Once::new();
-
-fn init_test_logging() {
-    INIT_LOGGING.call_once(|| {
-        let _ = LoggingConfig::from_env().init();
-    });
-}
+use crate::runners::test_helpers::init_test_logging;
 
 // Parameters for the sleeping tool
 #[derive(Serialize, Deserialize, JsonSchema)]

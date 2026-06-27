@@ -1,32 +1,15 @@
 use super::coder::CoderBrain;
 use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{Agent, Brain, StdoutEventManager, ThinkerContext};
-use crate::config::config::ShaiConfig;
-use crate::logging::LoggingConfig;
 use crate::tools::AnyTool;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use shai_llm::client::LlmClient;
 use shai_llm::ToolCallMethod;
 use std::sync::Arc;
-use std::sync::Once;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
-use crate::runners::test_helpers::DIR_TEST_MUTEX;
-
-/// Helper to get an LLM client + model from ShaiConfig.
-/// Falls back to environment variables if no config file exists.
-async fn get_llm() -> Result<(Arc<LlmClient>, String), Box<dyn std::error::Error>> {
-    let (client, model) = ShaiConfig::get_llm().await?;
-    Ok((Arc::new(client), model))
-}
-
-static INIT_LOGGING: Once = Once::new();
-fn init_test_logging() {
-    INIT_LOGGING.call_once(|| {
-        let _ = LoggingConfig::from_env().init();
-    });
-}
+use crate::runners::test_helpers::{get_llm, init_test_logging, DIR_TEST_MUTEX};
 
 // Helper function to create a coder agent with full toolbox
 async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {

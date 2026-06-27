@@ -1,28 +1,10 @@
 use super::searcher::SearcherBrain;
 use crate::agent::Agent;
-use crate::config::config::ShaiConfig;
-use crate::logging::LoggingConfig;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
-use shai_llm::client::LlmClient;
 use std::sync::Arc;
-use std::sync::Once;
 use tempfile::TempDir;
 
-static INIT_LOGGING: Once = Once::new();
-fn init_test_logging() {
-    INIT_LOGGING.call_once(|| {
-        let _ = LoggingConfig::from_env().init();
-    });
-}
-
-use crate::runners::test_helpers::DIR_TEST_MUTEX;
-
-/// Helper to get an LLM client + model from ShaiConfig.
-/// Falls back to environment variables if no config file exists.
-async fn get_llm() -> Result<(Arc<LlmClient>, String), Box<dyn std::error::Error>> {
-    let (client, model) = ShaiConfig::get_llm().await?;
-    Ok((Arc::new(client), model))
-}
+use crate::runners::test_helpers::{get_llm, init_test_logging, DIR_TEST_MUTEX};
 
 // Helper function to create a searcher agent with goal
 async fn create_searcher_agent_with_goal(goal: &str) -> impl Agent {

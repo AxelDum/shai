@@ -60,6 +60,16 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "regenerate the last response",
         args: &[],
     },
+    CommandDef {
+        name: "/tools",
+        description: "list all registered tools",
+        args: &[],
+    },
+    CommandDef {
+        name: "/mcp",
+        description: "list MCP servers and connection status",
+        args: &[],
+    },
 ];
 
 pub struct CommandRegistry {
@@ -362,6 +372,38 @@ impl CommandRegistry {
                         })?;
                         app.history.add_text(&msg);
                     }
+                }
+            }
+            "/tools" => {
+                let tools = app.agent.as_ref().map(|a| a.tools.clone()).unwrap_or_default();
+                if tools.is_empty() {
+                    app.notify("No tools available.", Duration::from_secs(2));
+                } else {
+                    let mut msg = String::from("\x1b[1mAvailable tools:\x1b[0m\n");
+                    for (name, desc) in &tools {
+                        msg.push_str(&format!("  \x1b[36m\u{2022}\x1b[0m \x1b[1m{}\x1b[0m \u{2014} {}\n", name, desc));
+                    }
+                    if let Some(ref mut terminal) = app.terminal {
+                        let wrapped = msg.into_text().unwrap();
+                        let line_count = wrapped.lines.len() as u16;
+                        terminal.clear()?;
+                        terminal.insert_before(line_count, |buf| {
+                            wrapped.render(buf.area, buf);
+                        })?;
+                        app.history.add_text(&msg);
+                    }
+                }
+            }
+            "/mcp" => {
+                let msg = format!("{}", app.mcp_manager);
+                if let Some(ref mut terminal) = app.terminal {
+                    let wrapped = msg.into_text().unwrap();
+                    let line_count = wrapped.lines.len() as u16;
+                    terminal.clear()?;
+                    terminal.insert_before(line_count, |buf| {
+                        wrapped.render(buf.area, buf);
+                    })?;
+                    app.history.add_text(&msg);
                 }
             }
             _ => {

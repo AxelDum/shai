@@ -4,6 +4,7 @@ pub mod command;
 pub mod helper;
 pub mod history;
 pub mod input;
+pub mod mcp_manager;
 pub mod modal;
 pub mod perm;
 pub mod perm_alt_screen;

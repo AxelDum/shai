@@ -33,6 +33,9 @@ pub trait Agent: Send + Sync {
     /// Get an event watcher to subscribe to agent events
     fn watch(&mut self) -> broadcast::Receiver<AgentEvent>;
 
+    /// List all available tools (name, description) registered with the agent
+    fn list_tools(&self) -> Vec<(String, String)>;
+
     /// Register an event handler closure
     fn on_event<F>(self, handler: F) -> Self
     where
@@ -282,6 +285,14 @@ impl Agent for AgentCore {
         H: AgentEventHandler + 'static,
     {
         self.with_event_handler(handler)
+    }
+
+    fn list_tools(&self) -> Vec<(String, String)> {
+        self.tool_ctx
+            .available_tools
+            .iter()
+            .map(|t| (t.name(), t.description()))
+            .collect()
     }
 }
 

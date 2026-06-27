@@ -82,6 +82,24 @@ Key bindings are specified as strings with modifiers separated by `+`:
 "esc"            // Escape key
 ```
 
+## Commands
+
+The following slash commands are available in the TUI:
+
+| Command | Description |
+|---------|-------------|
+| `/exit` | Exit the TUI |
+| `/tc <method>` | Set tool call method: `auto`, `fc`, `fc2`, `so` |
+| `/temp <float>` | Set sampling temperature |
+| `/tokens` | Display token usage |
+| `/theme [dark|light|toggle]` | Set or toggle theme |
+| `/restore [index|id]` | Restore a previous session |
+| `/latest` | Restore the most recent session |
+| `/skills` | List available skills |
+| `/regenerate` | Regenerate the last response |
+| `/tools` | List all registered tools |
+| `/mcp` | List MCP servers and connection status |
+
 ## Migration
 
 ### From environment variables

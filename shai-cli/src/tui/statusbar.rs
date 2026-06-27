@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::theme::Theme;
+use super::theme::{Theme, ThemePalette};
 
 /// Format a token count into human-readable form (K, M, G)
 fn format_tokens(n: u32) -> String {
@@ -79,6 +79,18 @@ impl StatusBar {
             notification: None,
             notification_until: None,
         }
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
+    pub fn theme_mut(&mut self) -> &mut Theme {
+        &mut self.theme
+    }
+
+    pub fn palette(&self) -> ThemePalette {
+        self.theme.palette()
     }
 
     pub fn update(&mut self, info: StatusBarInfo) {

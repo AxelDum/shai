@@ -94,7 +94,7 @@ impl CommandRegistry {
 
         match cmd {
             "/exit" => {
-                app.exit = true;
+                app.ui_state.exit = true;
             }
             "/tc" => {
                 if let Some(ref agent) = app.agent {
@@ -189,31 +189,31 @@ impl CommandRegistry {
             "/tokens" => {
                 let msg = format!(
                     "Token Usage - Input: {}, Output: {}, Cached: {}, Total: {}",
-                    app.token_counter.input_tokens(),
-                    app.token_counter.output_tokens(),
-                    app.token_counter.cached_tokens(),
-                    app.token_counter.total()
+                    app.agent_state.token_counter().input_tokens(),
+                    app.agent_state.token_counter().output_tokens(),
+                    app.agent_state.token_counter().cached_tokens(),
+                    app.agent_state.token_counter().total()
                 );
                 app.notify(&msg, Duration::from_secs(5));
             }
             "/theme" => match args.into_iter().next() {
                 Some("dark") => {
-                    app.theme = Theme::Dark;
-                    let new_palette = app.theme.palette();
+                    *app.status_bar.theme_mut() = Theme::Dark;
+                    let new_palette = app.status_bar.palette();
                     app.input.set_palette(new_palette);
                     app.notify("Theme set to dark", Duration::from_secs(2));
                 }
                 Some("light") => {
-                    app.theme = Theme::Light;
-                    let new_palette = app.theme.palette();
+                    *app.status_bar.theme_mut() = Theme::Light;
+                    let new_palette = app.status_bar.palette();
                     app.input.set_palette(new_palette);
                     app.notify("Theme set to light", Duration::from_secs(2));
                 }
                 Some("toggle") => {
-                    app.theme.toggle();
-                    let new_palette = app.theme.palette();
+                    app.status_bar.theme_mut().toggle();
+                    let new_palette = app.status_bar.palette();
                     app.input.set_palette(new_palette);
-                    let theme_name = match app.theme {
+                    let theme_name = match app.status_bar.theme() {
                         Theme::Dark => "dark",
                         Theme::Light => "light",
                     };
@@ -231,7 +231,6 @@ impl CommandRegistry {
                 match sessions {
                     Ok(sessions) if !sessions.is_empty() => {
                         if let Some(arg) = args.into_iter().next() {
-                            // Try to match by index (1-based) or by session_id prefix
                             let selected = arg
                                 .parse::<usize>()
                                 .ok()
@@ -243,7 +242,6 @@ impl CommandRegistry {
                                     }
                                 })
                                 .or_else(|| {
-                                    // Match by session_id prefix
                                     sessions.iter().find(|s| s.session_id.starts_with(arg))
                                 });
 
@@ -253,25 +251,23 @@ impl CommandRegistry {
                                     Duration::from_secs(2),
                                 );
 
-                                // Drop existing agent
                                 if let Some(agent) = app.agent.take() {
                                     let _ = agent.controller.terminate().await;
                                 }
 
-                                // Start new agent
-                                let agent_name = app.agent_name.clone();
+                                let agent_name = app.agent_meta.name().map(|s| s.to_string());
                                 app.start_agent(agent_name.as_deref()).await.map_err(|e| {
                                     io::Error::other(format!("Failed to start agent: {}", e))
                                 })?;
 
-                                // Load the trace into the agent (without starting to think)
                                 if let Some(ref agent) = app.agent {
                                     let _ =
                                         agent.controller.load_trace(session.trace.clone()).await;
                                 }
 
-                                // Render the trace into the TUI
-                                app.session_manager.set_session_id(&session.session_id);
+                                app.agent_state
+                                    .session_manager_mut()
+                                    .set_session_id(&session.session_id);
                                 app.render_restored_trace(&session.trace);
 
                                 app.notify(
@@ -282,13 +278,9 @@ impl CommandRegistry {
                                 app.notify("Invalid session number", Duration::from_secs(2));
                             }
                         } else {
-                            // Open the session picker modal
-                            let palette = app.theme.palette();
-                            app.session_picker =
-                                Some(crate::tui::session_picker::SessionPicker::new(
-                                    sessions.clone(),
-                                    palette,
-                                ));
+                            let palette = app.status_bar.palette();
+                            app.ui_state.session_picker =
+                                Some(SessionPicker::new(sessions.clone(), palette));
                         }
                     }
                     Ok(_) => {
@@ -311,24 +303,22 @@ impl CommandRegistry {
                             Duration::from_secs(2),
                         );
 
-                        // Drop existing agent
                         if let Some(agent) = app.agent.take() {
                             let _ = agent.controller.terminate().await;
                         }
 
-                        // Start new agent
-                        let agent_name = app.agent_name.clone();
+                        let agent_name = app.agent_meta.name().map(|s| s.to_string());
                         app.start_agent(agent_name.as_deref()).await.map_err(|e| {
                             io::Error::other(format!("Failed to start agent: {}", e))
                         })?;
 
-                        // Load the trace into the agent (without starting to think)
                         if let Some(ref agent) = app.agent {
                             let _ = agent.controller.load_trace(session.trace.clone()).await;
                         }
 
-                        // Render the trace into the TUI
-                        app.session_manager.set_session_id(&session.session_id);
+                        app.agent_state
+                            .session_manager_mut()
+                            .set_session_id(&session.session_id);
                         app.render_restored_trace(&session.trace);
 
                         app.notify(
@@ -370,7 +360,7 @@ impl CommandRegistry {
                         terminal.insert_before(line_count, |buf| {
                             wrapped.render(buf.area, buf);
                         })?;
-                        app.history.add_text(&msg);
+                        app.renderer.history_mut().add_text(&msg);
                     }
                 }
             }
@@ -390,12 +380,12 @@ impl CommandRegistry {
                         terminal.insert_before(line_count, |buf| {
                             wrapped.render(buf.area, buf);
                         })?;
-                        app.history.add_text(&msg);
+                        app.renderer.history_mut().add_text(&msg);
                     }
                 }
             }
             "/mcp" => {
-                let msg = format!("{}", app.mcp_manager);
+                let msg = format!("{}", app.agent_state.mcp_manager());
                 if let Some(ref mut terminal) = app.terminal {
                     let wrapped = msg.into_text().unwrap();
                     let line_count = wrapped.lines.len() as u16;
@@ -403,7 +393,7 @@ impl CommandRegistry {
                     terminal.insert_before(line_count, |buf| {
                         wrapped.render(buf.area, buf);
                     })?;
-                    app.history.add_text(&msg);
+                    app.renderer.history_mut().add_text(&msg);
                 }
             }
             _ => {

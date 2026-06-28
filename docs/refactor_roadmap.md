@@ -46,15 +46,26 @@ The tool execution path (`spawn_tool_static`) takes 15 parameters, all cloned fr
 
 **Files:** `shai-cli/src/tui/app.rs`, `shai-cli/src/tui/command.rs`, `shai-cli/src/tui/input.rs`, `shai-cli/src/tui/shortcuts.rs`
 
-- Extract `ToolTracker` struct (`running_tools`, `tool_start_times`).
-- Extract `SessionManager` struct (`session_id`, `last_assistant_response`).
-- Extract `TokenCounter` struct (`total_input_tokens`, `total_output_tokens`, `total_cached_tokens`).
-- Extract `PermissionManager` struct (`permission_queue`).
-- Introduce `Modal` trait (`handle_event()`, `draw()`, `height()`) to deduplicate the 4 alternate-screen modal implementations (`SessionPicker`, `PromptPicker`, `AlternateScreenViewer`, `AlternateScreenPermissionModal`).
-- Extract `CommandRegistry` from `command.rs` — slash commands should not extend `App`.
-- Decompose `InputArea` into `FileSuggestion` and `CommandSuggestion` sub-components.
-- Wire `shortcuts.rs` into the event loop or remove it.
-- Reduce `App` to pure orchestration between extracted components.
+**Phase 1 — Field extractions (done):**
+
+- [x] Extract `ToolTracker` struct (`running_tools`, `tool_start_times`, `last_tool_output`, `last_tool_file_path`).
+- [x] Extract `TokenCounter` struct (`total_input_tokens`, `total_output_tokens`, `total_cached_tokens`).
+- [x] Extract `SessionManager` struct (`session_id`, `last_assistant_response`).
+- [x] Extract `PermissionManager` struct (`permission_queue`).
+
+**Phase 2 — Structural refactoring (done):**
+
+- [x] Introduce `Modal` trait (`draw()`, `handle_key_event()`) with `run_alternate_screen()` helper to deduplicate alternate-screen modal implementations (`AlternateScreenViewer`, `PromptPicker`, `AlternateScreenPermissionModal`).
+- [x] Extract `CommandRegistry` from `command.rs` — slash commands no longer extend `App`.
+- [x] Decompose `InputArea` into `FileSuggestion` and `CommandSuggestion` sub-components.
+
+**Phase 3 — Cleanup (mostly done):**
+
+- [x] Wire `shortcuts.rs` into the event loop — all TUI key bindings are now configurable via `tui.config.json`.
+- [x] Config file migrations — `auth.config` → `auth.config.json`, `{name}.config` → `{name}.config.json` (legacy fallback).
+- [x] `SHAI_KEY_*` env vars supported as fallback when `tui.config.json` doesn't exist.
+- [x] `cancel_task`, `clear_input`, `paste` shortcuts moved from hardcoded `input.rs` checks to configurable `KeyBinding` fields.
+- [x] Reduce `App` to pure orchestration between extracted components.
 
 **Depends on:** Nothing.
 
@@ -62,11 +73,11 @@ The tool execution path (`spawn_tool_static`) takes 15 parameters, all cloned fr
 
 **Files:** `shai-core/src/agent/agent.rs`, `shai-core/src/agent/builder.rs`, `shai-core/src/agent/actions/tools.rs`, `shai-core/src/agent/states/*`
 
-- Extract `AgentSocket` (channel management: `tx_command`, `rx_command`, `tx_event`, `rx_event`) from `AgentCore` — already exists as a struct, formalize ownership.
-- Extract `ToolCache` struct (`command_cache`, `read_cache`, `tool_call_metadata`) from `AgentCore`.
-- Extract `ToolBudget` struct (`tool_call_count`, `max_tool_calls`, `soft_tool_calls`) from `AgentCore`/`ThinkerContext`.
-- Move `tool_call_count`, `max_tool_calls`, `soft_tool_calls`, and `tool_call_metadata` off `ThinkerContext` — these are agent-loop concerns.
-- Introduce `ToolContext` struct to bundle the shared state passed to tool coroutines:
+- [x] Extract `AgentSocket` (channel management: `tx_command`, `rx_command`) from `AgentCore` — already exists as a struct, formalized ownership. `tx_event`/`rx_event` moved to `ToolContext` as `public_event_tx`.
+- [x] Extract `ToolCache` struct (`command_cache`, `read_cache`, `tool_call_metadata`) from `AgentCore`.
+- [x] Extract `ToolBudget` struct (`tool_call_count`, `max_tool_calls`, `soft_tool_calls`) from `AgentCore`/`ThinkerContext`.
+- [x] Move `tool_call_count`, `max_tool_calls`, `soft_tool_calls`, and `tool_call_metadata` off `ThinkerContext` — these are agent-loop concerns.
+- [x] Introduce `ToolContext` struct to bundle the shared state passed to tool coroutines:
 
 ```rust
 pub struct ToolContext {
@@ -78,17 +89,18 @@ pub struct ToolContext {
     pub trace: Arc<RwLock<Vec<ChatMessage>>>,
     pub claims: Arc<RwLock<ClaimManager>>,
     pub compaction_config: CompactionConfig,
+    pub verification_config: VerificationConfig,
     pub working_dir: Option<String>,
     pub todo_storage: Arc<TodoStorage>,
-    // Caching
+    pub fs_operation_log: Arc<FsOperationLog>,
+    // Caching & budget
     pub tool_cache: ToolCache,
-    pub max_cached_commands: usize,
-    pub max_cached_reads: usize,
+    pub tool_budget: ToolBudget,
 }
 ```
 
-- Reduce `spawn_tool_static` from 15 parameters to 2 (`ToolContext` + `LlmToolCall`).
-- Consolidate agent construction logic between `coder()` factory, `AgentBuilder::default()`, and `AppHeadless::run()`.
+- [x] Reduce `spawn_tool_static` from 15 parameters to 3 (`LlmToolCall` + `CancellationToken` + `ToolContext`).
+- [x] Consolidate agent construction logic between `coder()` factory, `AgentBuilder::default()`, and `AppHeadless::run()`.
 
 **Depends on:** Nothing.
 
@@ -99,7 +111,7 @@ pub struct ToolContext {
 - Merge `addMaxTokenCompaction` branch into `refactorApp`.
 - Introduce `CompactionManager` as described in `docs/rework_compact.md`.
 - Move compaction logic out of `CoderBrain::next_step()`.
-- Simplify `ThinkerContext`: drop `max_trace_chars`, make `trace` an owned `Vec<ChatMessage>` snapshot instead of `Arc<RwLock<>>`.
+- [x] Simplify `ThinkerContext`: make `trace` an owned `Vec<ChatMessage>` snapshot instead of `Arc<RwLock<>>`.
 - Remove `ContextCompressor` dead code references if any remain after merge.
 
 **Depends on:** Tracks A and B (must settle `AgentCore` and `ThinkerContext` shape first).

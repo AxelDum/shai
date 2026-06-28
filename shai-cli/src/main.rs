@@ -77,23 +77,20 @@ struct Cli {
     #[arg(short, long)]
     version: bool,
     /// Restore a previous session by session ID
-    #[arg(long)]
+    #[arg(short, long)]
     restore: Option<String>,
     /// Restore the most recent session automatically
     #[arg(long)]
     latest: bool,
-    /// Auto-fix mode: if no subcommand provided, these args go to fix
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
-}
-
-#[derive(Subcommand)]
-enum AgentAction {
-    /// List all available agents
-    List,
-    #[command(external_subcommand)]
-    /// Run a specific agent by name
-    Agent(Vec<String>),
+    /// Headless mode with prompt
+    #[arg(short, long)]
+    prompt: Option<String>,
+    /// Use specific agent
+    #[arg(short, long)]
+    agent: Option<String>,
+    /// Interactive mode: pipe input then show TUI with context
+    #[arg(short, long)]
+    interactive: bool,
 }
 
 #[derive(Subcommand)]
@@ -118,8 +115,18 @@ enum Commands {
     Auth,
     /// Agent management commands
     Agent {
+        /// Agent name or "list" to list agents
+        name: Option<String>,
+    },
+    /// Session management commands
+    Session {
+        /// Session ID or "latest" to restore the most recent session
+        id: Option<String>,
+    },
+    /// List agents, sessions, or skills
+    List {
         #[command(subcommand)]
-        action: AgentAction,
+        what: Option<ListTarget>,
     },
     #[cfg(unix)]
     /// Send pre-command hook (before command execution)
@@ -164,6 +171,16 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand)]
+enum ListTarget {
+    /// List available agents
+    Agent,
+    /// List saved sessions
+    Session,
+    /// List available skills
+    Skills,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -185,8 +202,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Auth) => {
             handle_config().await?;
         }
-        Some(Commands::Agent { action }) => {
-            handle_agent_command(action).await?;
+        Some(Commands::Agent { name }) => {
+            match name.as_deref() {
+                Some("list") => {
+                    list_agents();
+                }
+                Some(name) => {
+                    handle_main(Some(name.to_string()), None, None).await?;
+                }
+                None => {
+                    handle_main(None, None, Some(tui::app::InitialModal::AgentPicker))
+                        .await;
+                }
+            }
+        }
+        Some(Commands::Session { id }) => {
+            match id.as_deref() {
+                Some("latest") => {
+                    let restore_id = match shai_core::session::SessionPersist::list_sessions() {
+                        Ok(sessions) if !sessions.is_empty() => {
+                            Some(sessions[0].session_id.clone())
+                        }
+                        _ => {
+                            eprintln!("No previous session found.");
+                            return Ok(());
+                        }
+                    };
+                    handle_main(None, restore_id, None).await?;
+                }
+                Some(id) => {
+                    handle_main(None, Some(id.to_string()), None).await?;
+                }
+                None => {
+                    handle_main(
+                        None,
+                        None,
+                        Some(tui::app::InitialModal::SessionPicker),
+                    )
+                    .await;
+                }
+            }
+        }
+        Some(Commands::List { what }) => {
+            match what {
+                Some(ListTarget::Agent) => list_agents(),
+                Some(ListTarget::Session) => list_sessions(),
+                Some(ListTarget::Skills) => list_skills(),
+                None => {
+                    list_agents();
+                    println!();
+                    list_sessions();
+                    println!();
+                    list_skills();
+                }
+            }
         }
         #[cfg(unix)]
         Some(Commands::Precmd { command }) => {
@@ -211,7 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             handle_import(overwrite)?;
         }
         None => {
-            // Check for stdin input or trailing arguments
+            // Check for stdin input
             let stdin_input = if !io::stdin().is_terminal() {
                 let mut buffer = String::new();
                 io::stdin().read_to_string(&mut buffer)?;
@@ -219,18 +288,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 None
             };
-
-            let mut messages = Vec::new();
-
-            // Add stdin content as first message if present
-            if let Some(stdin_content) = stdin_input {
-                messages.push(stdin_content);
-            }
-
-            // Add arguments as second message if present
-            if !cli.args.is_empty() {
-                messages.push(cli.args.join(" "));
-            }
 
             // Handle --list-tools flag
             if cli.list_tools {
@@ -244,34 +301,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
 
-            if !messages.is_empty() || cli.list_tools {
-                // Route to fix command with combined messages and global options
+            // Handle --prompt flag (headless mode)
+            if let Some(prompt) = cli.prompt {
+                let mut messages = vec![prompt];
+                if let Some(ref stdin_content) = stdin_input {
+                    messages.push(stdin_content.clone());
+                }
                 let _ = handle_fix(
                     messages,
                     cli.tools,
                     cli.remove,
                     cli.trace,
-                    None,
+                    cli.agent,
                     cli.temperature,
                 )
                 .await;
-            } else {
-                // No input, show TUI
-                let restore_id = if cli.latest {
-                    match shai_core::session::SessionPersist::list_sessions() {
-                        Ok(sessions) if !sessions.is_empty() => {
-                            Some(sessions[0].session_id.clone())
-                        }
-                        _ => {
-                            eprintln!("No previous session found.");
-                            return Ok(());
-                        }
-                    }
-                } else {
-                    cli.restore.clone()
-                };
-                handle_main(None, restore_id).await?;
+                return Ok(());
             }
+
+            // Handle piped stdin without --prompt
+            if let Some(stdin_content) = stdin_input {
+                if cli.interactive {
+                    // Interactive mode: show TUI with piped content as initial prompt
+                    handle_main_with_prompt(cli.agent.clone(), stdin_content).await?;
+                    return Ok(());
+                } else {
+                    // Headless mode from pipe
+                    let _ = handle_fix(
+                        vec![stdin_content],
+                        cli.tools,
+                        cli.remove,
+                        cli.trace,
+                        cli.agent,
+                        cli.temperature,
+                    )
+                    .await;
+                    return Ok(());
+                }
+            }
+
+            // No input, show TUI
+            let restore_id = if cli.latest {
+                match shai_core::session::SessionPersist::list_sessions() {
+                    Ok(sessions) if !sessions.is_empty() => {
+                        Some(sessions[0].session_id.clone())
+                    }
+                    _ => {
+                        eprintln!("No previous session found.");
+                        return Ok(());
+                    }
+                }
+            } else {
+                cli.restore.clone()
+            };
+            handle_main(cli.agent.clone(), restore_id, None).await?;
         }
     }
 
@@ -316,11 +399,29 @@ async fn default_config(default_config_url: Option<String>) {
 async fn handle_main(
     agent_name: Option<String>,
     restore_session_id: Option<String>,
+    initial_modal: Option<tui::app::InitialModal>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let logo = logo();
     println!("{}", apply_gradient(&logo, SHAI_YELLOW, SHAI_YELLOW));
     let mut app = App::new();
+    if let Some(modal) = initial_modal {
+        app.initial_modal = modal;
+    }
     if let Err(e) = app.run(agent_name, restore_session_id).await {
+        eprintln!("error: {}", e)
+    }
+    Ok(())
+}
+
+async fn handle_main_with_prompt(
+    agent_name: Option<String>,
+    prompt: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let logo = logo();
+    println!("{}", apply_gradient(&logo, SHAI_YELLOW, SHAI_YELLOW));
+    let mut app = App::new();
+    app.initial_prompt = Some(prompt);
+    if let Err(e) = app.run(agent_name, None).await {
         eprintln!("error: {}", e)
     }
     Ok(())
@@ -596,68 +697,83 @@ async fn handle_serve(
     Ok(())
 }
 
-async fn handle_agent_command(action: AgentAction) -> Result<(), Box<dyn std::error::Error>> {
-    match action {
-        AgentAction::List => {
-            let agents = AgentConfig::list_agents()?;
-            if agents.is_empty() {
-                println!("No custom agents found.");
-                println!("Create agent configs in ~/.config/shai/agents/");
-            } else {
-                println!("Available agents:");
-
-                // Find the longest agent name for alignment
-                let max_name_len = agents.iter().map(|name| name.len()).max().unwrap_or(0);
-
-                for agent in agents {
-                    match AgentConfig::load(&agent) {
-                        Ok(config) => {
-                            println!(
-                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m{}\x1b[0m",
-                                agent,
-                                config.description,
-                                width = max_name_len
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error: {})\x1b[0m",
-                                agent,
-                                e,
-                                width = max_name_len
-                            );
-                        }
-                    }
-                }
-            }
+fn list_agents() {
+    let agents = match AgentConfig::list_agents() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("Failed to list agents: {}", e);
+            return;
         }
-        AgentAction::Agent(args) => {
-            if args.is_empty() {
-                eprintln!("Error: Please specify an agent name");
-                eprintln!("Usage: shai agent <agent_name> [prompt]");
-                return Ok(());
+    };
+
+    if agents.is_empty() {
+        println!("No custom agents found.");
+        println!("Create agent configs in ~/.config/shai/agents/");
+        return;
+    }
+
+    println!("Available agents:");
+    let max_name_len = agents.iter().map(|name| name.len()).max().unwrap_or(0);
+
+    for agent in agents {
+        match AgentConfig::load(&agent) {
+            Ok(config) => {
+                println!(
+                    "  \x1b[1m{:<width$}\x1b[0m \x1b[2m{}\x1b[0m",
+                    agent,
+                    config.description,
+                    width = max_name_len
+                );
             }
-
-            let agent_name = &args[0];
-            let prompt_args: Vec<String> = args.iter().skip(1).cloned().collect();
-
-            if prompt_args.is_empty() {
-                // No prompt provided, start TUI mode with the agent
-                handle_main(Some(agent_name.clone()), None).await?;
-            } else {
-                // Prompt provided, run in headless mode
-                let prompt = prompt_args.join(" ");
-                handle_fix(
-                    vec![prompt],
-                    None,
-                    None,
-                    false,
-                    Some(agent_name.clone()),
-                    None,
-                )
-                .await?;
+            Err(e) => {
+                eprintln!(
+                    "  \x1b[1m{:<width$}\x1b[0m \x1b[2m(config error: {})\x1b[0m",
+                    agent,
+                    e,
+                    width = max_name_len
+                );
             }
         }
     }
-    Ok(())
+}
+
+fn list_sessions() {
+    match shai_core::session::SessionPersist::list_sessions() {
+        Ok(sessions) => {
+            if sessions.is_empty() {
+                println!("No saved sessions found.");
+                return;
+            }
+
+            println!("Saved sessions:");
+            for session in &sessions {
+                let id_short = &session.session_id[..8.min(session.session_id.len())];
+                let name = session.name.as_deref().unwrap_or("unnamed");
+                println!("  \x1b[1m{:<20}\x1b[0m \x1b[2m({})\x1b[0m", name, id_short);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to list sessions: {}", e);
+        }
+    }
+}
+
+fn list_skills() {
+    let skills = shai_core::tools::skills::discovery::discover_skills();
+    if skills.is_empty() {
+        println!("No skills found.");
+        return;
+    }
+
+    println!("Available skills:");
+    for skill in &skills {
+        if skill.description.is_empty() {
+            println!("  \x1b[36m\u{2022}\x1b[0m {}", skill.name);
+        } else {
+            println!(
+                "  \x1b[36m\u{2022}\x1b[0m \x1b[1m{}\x1b[0m \u{2014} {}",
+                skill.name, skill.description
+            );
+        }
+    }
 }

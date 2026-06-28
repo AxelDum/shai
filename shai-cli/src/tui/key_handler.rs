@@ -118,6 +118,33 @@ impl App<'_> {
         Ok(())
     }
 
+    async fn handle_agent_picker_key(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
+        use super::agent_picker::AgentPickerAction;
+
+        let picker = self.ui_state.agent_picker.as_mut().unwrap();
+        match picker.handle_key_event(key_event) {
+            Some(AgentPickerAction::Selected(name)) => {
+                self.ui_state.agent_picker = None;
+                self.input.alert_msg(
+                    &format!("Switching to agent '{}'...", name),
+                    Duration::from_secs(2),
+                );
+                self.swap_agent(Some(&name)).await.map_err(|e| {
+                    io::Error::other(format!("Failed to switch agent: {}", e))
+                })?;
+                self.input.alert_msg(
+                    &format!("Switched to agent '{}'", name),
+                    Duration::from_secs(2),
+                );
+            }
+            Some(AgentPickerAction::Cancelled) => {
+                self.ui_state.agent_picker = None;
+            }
+            None => {}
+        }
+        Ok(())
+    }
+
     pub(crate) async fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> io::Result<()> {
         if self.shortcuts.matches(&key_event, self.shortcuts.exit()) {
             self.ui_state.exit = true;
@@ -126,6 +153,10 @@ impl App<'_> {
 
         if self.ui_state.session_picker.is_some() {
             return self.handle_session_picker_key(key_event).await;
+        }
+
+        if self.ui_state.agent_picker.is_some() {
+            return self.handle_agent_picker_key(key_event).await;
         }
 
         if self.shortcuts.matches(&key_event, self.shortcuts.toggle_theme()) {
@@ -409,6 +440,16 @@ impl App<'_> {
                 self.status_bar.draw(frame, statusbar_area);
 
                 if let Some(ref mut picker) = self.ui_state.session_picker {
+                    let picker_area = Rect {
+                        x: 2,
+                        y: 1,
+                        width: frame.area().width.saturating_sub(4),
+                        height: frame.area().height.saturating_sub(2),
+                    };
+                    picker.draw(frame, picker_area);
+                }
+
+                if let Some(ref mut picker) = self.ui_state.agent_picker {
                     let picker_area = Rect {
                         x: 2,
                         y: 1,

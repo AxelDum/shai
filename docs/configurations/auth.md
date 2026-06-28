@@ -56,14 +56,10 @@ Previous versions of Shai used `auth.config` (without `.json` extension). If `au
 
 ## Management
 
-The auth configuration is typically managed via the `shai auth` interactive wizard:
+The auth configuration is managed via the `shai auth` interactive wizard:
 
 ```bash
 shai auth
 ```
 
-You can also import a config from a URL:
-
-```bash
-shai auth --import https://example.com/config.json
-```
+You can also run auth from within the TUI using the `/auth` slash command — this will save your current conversation context and restart the agent with the new provider settings.

@@ -90,10 +90,19 @@ Previous versions of Shai used `{name}.config` (without `.json` extension). If `
 
 ## Management
 
-Agents are typically managed via the `shai auth` interactive wizard:
+Agents are managed via the CLI:
 
 ```bash
-shai auth
+shai agent              # Open agent picker in TUI
+shai agent myagent     # Launch TUI with a specific agent
+shai agent list         # List available agents
+shai list agent         # Same as above (canonical form)
 ```
 
-This lets you create, edit, and delete agent configurations interactively.
+You can also run an agent in headless mode:
+
+```bash
+shai -a myagent -p "your prompt here"
+```
+
+Or switch agents from within the TUI using the `/agent` slash command (keeps conversation context).

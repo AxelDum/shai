@@ -1,4 +1,5 @@
 pub mod agent_meta;
+pub mod agent_picker;
 pub mod agent_state;
 pub mod app;
 pub mod auth;

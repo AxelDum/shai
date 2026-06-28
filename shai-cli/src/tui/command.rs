@@ -70,6 +70,16 @@ pub const COMMANDS: &[CommandDef] = &[
         description: "list MCP servers and connection status",
         args: &[],
     },
+    CommandDef {
+        name: "/auth",
+        description: "configure AI provider",
+        args: &[],
+    },
+    CommandDef {
+        name: "/agent",
+        description: "switch agent",
+        args: &[],
+    },
 ];
 
 pub struct CommandRegistry {
@@ -395,6 +405,48 @@ impl CommandRegistry {
                     })?;
                     app.renderer.history_mut().add_text(&msg);
                 }
+            }
+            "/auth" => {
+                // Save agent name and trace before reconfiguring
+                let agent_name = app.agent_meta.name().map(|s| s.to_string());
+                let trace = if let Some(ref agent) = app.agent {
+                    agent.controller.get_trace().await.ok()
+                } else {
+                    None
+                };
+
+                // Terminate current agent
+                if let Some(agent) = app.agent.take() {
+                    let _ = agent.controller.terminate().await;
+                    let _ = agent.handle.await;
+                }
+
+                // Run auth TUI
+                let mut auth = crate::tui::auth::auth::AppAuth::new();
+                auth.run().await;
+
+                // Re-enable raw mode (auth TUI disables it)
+                use crossterm::terminal::enable_raw_mode;
+                enable_raw_mode().ok();
+
+                // Clear terminal and recreate agent
+                if let Some(ref mut terminal) = app.terminal {
+                    let _ = terminal.clear();
+                }
+
+                app.start_agent(agent_name.as_deref()).await.ok();
+
+                if let Some(trace) = trace {
+                    if let Some(ref agent) = app.agent {
+                        let _ = agent.controller.load_trace(trace).await;
+                    }
+                }
+
+                app.notify("Provider configuration updated", Duration::from_secs(2));
+            }
+            "/agent" => {
+                app.ui_state.agent_picker =
+                    Some(super::agent_picker::AgentPicker::new(app.status_bar.palette()));
             }
             _ => {
                 app.notify("command unknown", Duration::from_secs(1));

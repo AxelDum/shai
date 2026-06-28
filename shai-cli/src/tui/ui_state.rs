@@ -8,6 +8,7 @@ pub enum AppModalState<'a> {
 pub struct UiState<'a> {
     pub modal_state: AppModalState<'a>,
     pub session_picker: Option<super::session_picker::SessionPicker>,
+    pub agent_picker: Option<super::agent_picker::AgentPicker>,
     pub exit: bool,
 }
 
@@ -16,6 +17,7 @@ impl<'a> UiState<'a> {
         Self {
             modal_state: AppModalState::InputShown,
             session_picker: None,
+            agent_picker: None,
             exit: false,
         }
     }

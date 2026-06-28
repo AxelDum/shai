@@ -36,6 +36,12 @@ pub struct AppRunningAgent {
     pub(crate) tools: Vec<(String, String)>,
 }
 
+pub enum InitialModal {
+    None,
+    AgentPicker,
+    SessionPicker,
+}
+
 pub struct App<'a> {
     pub(crate) terminal: Option<Terminal<CrosstermBackend<io::Stdout>>>,
     pub(crate) agent: Option<AppRunningAgent>,
@@ -47,6 +53,8 @@ pub struct App<'a> {
     pub(crate) command_registry: CommandRegistry,
     pub(crate) shortcuts: Shortcuts,
     pub(crate) status_bar: StatusBar,
+    pub(crate) initial_modal: InitialModal,
+    pub(crate) initial_prompt: Option<String>,
 }
 
 impl App<'_> {
@@ -185,6 +193,32 @@ impl App<'_> {
         Ok(())
     }
 
+    pub async fn swap_agent(
+        &mut self,
+        agent_name: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let trace = if let Some(ref agent) = self.agent {
+            agent.controller.get_trace().await.ok()
+        } else {
+            None
+        };
+
+        if let Some(agent) = self.agent.take() {
+            let _ = agent.controller.terminate().await;
+            let _ = agent.handle.await;
+        }
+
+        self.start_agent(agent_name).await?;
+
+        if let Some(trace) = trace {
+            if let Some(ref agent) = self.agent {
+                let _ = agent.controller.load_trace(trace).await;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn handle_agent_event(&mut self, event: AgentEvent) -> io::Result<()> {
         self.agent_state.handle_event(&event).await;
         self.renderer.handle_event(&event).await;
@@ -262,6 +296,8 @@ impl App<'_> {
             command_registry: CommandRegistry::new(),
             shortcuts,
             status_bar: StatusBar::new(theme),
+            initial_modal: InitialModal::None,
+            initial_prompt: None,
         }
     }
 
@@ -331,6 +367,28 @@ impl App<'_> {
 
         if let Some(session_id) = restore_session_id {
             self.restore_session(&session_id).await?;
+        }
+
+        // Show initial modal if requested
+        match self.initial_modal {
+            InitialModal::AgentPicker => {
+                self.ui_state.agent_picker =
+                    Some(super::agent_picker::AgentPicker::new(self.status_bar.palette()));
+            }
+            InitialModal::SessionPicker => {
+                let sessions =
+                    shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
+                self.ui_state.session_picker =
+                    Some(SessionPicker::new(sessions, self.status_bar.palette()));
+            }
+            InitialModal::None => {}
+        }
+
+        // Send initial prompt if provided (interactive mode)
+        if let Some(prompt) = self.initial_prompt.take() {
+            if let Some(ref agent) = self.agent {
+                let _ = agent.controller.send_user_input(prompt).await;
+            }
         }
 
         let mut animation_timer = interval(Duration::from_millis(100));

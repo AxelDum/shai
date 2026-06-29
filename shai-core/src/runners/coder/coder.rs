@@ -5,17 +5,13 @@ use openai_dive::v1::resources::chat::{
     ChatCompletionParametersBuilder, ChatMessage, ChatMessageContent,
 };
 use shai_llm::client::LlmClient;
+use shai_llm::tool::LlmToolCall;
 use tracing::debug;
 
 use crate::agent::brain::ThinkerDecision;
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{AgentBuilder, AgentCore, AgentError, Brain, ThinkerContext};
-use crate::tools::skills::SkillTool;
 use crate::tools::types::{ContainsAnyTool, IntoToolBox};
-use crate::tools::{
-    AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, ReadTool,
-    TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
-};
-use shai_llm::tool::LlmToolCall;
 
 use super::prompt::{get_todo_read, render_system_prompt_template, PLAN_MODE_PROMPT};
 use crate::runners::compacter::compact_trace_if_needed;
@@ -60,8 +56,12 @@ impl CoderBrain {
 
 #[async_trait]
 impl Brain for CoderBrain {
-    async fn next_step(&mut self, context: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
-        let mut trace = context.trace.read().await.clone();
+    async fn next_step(
+        &mut self,
+        context: ThinkerContext,
+        budget: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
+        let mut trace = context.trace.clone();
 
         // Apply session-level trace compaction if needed
         if context.max_trace_chars > 0 {
@@ -104,8 +104,8 @@ impl Brain for CoderBrain {
         }
 
         // Inject dynamic budget awareness hints
-        let tool_calls = context.tool_call_count;
-        if let Some(soft_budget) = context.soft_tool_calls {
+        let tool_calls = budget.count;
+        if let Some(soft_budget) = budget.soft_limit {
             if tool_calls >= soft_budget {
                 // Critical notice every 5 calls once soft budget is exceeded
                 if tool_calls == soft_budget || (tool_calls - soft_budget) % 5 == 0 {
@@ -226,35 +226,11 @@ impl Brain for CoderBrain {
 
 /// Coder agent factory — returns AgentCore directly so callers can configure working_dir.
 pub fn coder(llm: Arc<LlmClient>, model: String) -> AgentCore {
-    // Create shared storage for todo tools
-    let todo_storage = Arc::new(TodoStorage::new());
-
-    // Create shared operation log for file system tools
-    let fs_log = Arc::new(FsOperationLog::new());
-
-    let bash = Box::new(BashTool::new());
-    let edit = Box::new(EditTool::new(fs_log.clone()));
-    let fetch = Box::new(FetchTool::new());
-    let find = Box::new(FindTool::new());
-    let ls = Box::new(LsTool::new());
-    let read = Box::new(ReadTool::new(fs_log.clone()));
-    let todoread = Box::new(TodoReadTool::new(todo_storage.clone()));
-    let todowrite = Box::new(TodoWriteTool::new(todo_storage.clone()));
-    let write = Box::new(WriteTool::new(fs_log.clone()));
-    let toolbox: Vec<Box<dyn AnyTool>> = vec![
-        bash,
-        edit,
-        fetch,
-        find,
-        ls,
-        read,
-        todoread,
-        todowrite,
-        write,
-        Box::new(SkillTool::new()),
-    ];
+    let fs_log = Arc::new(crate::tools::FsOperationLog::new());
+    let (tools, todo_storage) = AgentBuilder::create_default_tools(fs_log);
 
     AgentBuilder::with_brain(Box::new(CoderBrain::new(llm.clone(), model)))
-        .tools(toolbox)
+        .tools(tools)
+        .set_todo_storage(todo_storage)
         .build()
 }

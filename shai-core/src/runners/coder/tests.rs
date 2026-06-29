@@ -1,31 +1,15 @@
 use super::coder::CoderBrain;
+use crate::agent::brain::ToolBudgetRef;
 use crate::agent::{Agent, Brain, StdoutEventManager, ThinkerContext};
-use crate::config::config::ShaiConfig;
-use crate::logging::LoggingConfig;
 use crate::tools::AnyTool;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
 use shai_llm::client::LlmClient;
 use shai_llm::ToolCallMethod;
 use std::sync::Arc;
-use std::sync::Once;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
-use crate::runners::test_helpers::DIR_TEST_MUTEX;
-
-/// Helper to get an LLM client + model from ShaiConfig.
-/// Falls back to environment variables if no config file exists.
-async fn get_llm() -> Result<(Arc<LlmClient>, String), Box<dyn std::error::Error>> {
-    let (client, model) = ShaiConfig::get_llm().await?;
-    Ok((Arc::new(client), model))
-}
-
-static INIT_LOGGING: Once = Once::new();
-fn init_test_logging() {
-    INIT_LOGGING.call_once(|| {
-        let _ = LoggingConfig::from_env().init();
-    });
-}
+use crate::runners::test_helpers::{get_llm, init_test_logging, DIR_TEST_MUTEX};
 
 // Helper function to create a coder agent with full toolbox
 async fn create_coder_agent_with_goal(goal: &str) -> impl Agent {
@@ -76,10 +60,10 @@ async fn test_coder_brain_think_simple() {
 
     // Create test context with a simple message
     let context = ThinkerContext {
-        trace: Arc::new(RwLock::new(vec![ChatMessage::User {
+        trace: vec![ChatMessage::User {
             content: ChatMessageContent::Text("Say hello".to_string()),
             name: None,
-        }])),
+        }],
         available_tools: vec![],
         method: ToolCallMethod::FunctionCall,
         max_trace_chars: 50000,
@@ -87,12 +71,18 @@ async fn test_coder_brain_think_simple() {
         is_plan_mode: false,
         active_prompts: vec![],
         tool_call_metadata: Arc::new(RwLock::new(std::collections::HashMap::new())),
-        tool_call_count: 0,
-        max_tool_calls: None,
-        soft_tool_calls: None,
     };
 
-    let result = brain.next_step(context).await;
+    let result = brain
+        .next_step(
+            context,
+            crate::agent::brain::ToolBudgetRef {
+                count: 0,
+                max_calls: None,
+                soft_limit: None,
+            },
+        )
+        .await;
     assert!(
         result.is_ok(),
         "Brain should successfully process simple message {:?}",

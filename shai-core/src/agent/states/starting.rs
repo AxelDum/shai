@@ -33,7 +33,7 @@ impl AgentCore {
 
     /// Handle agent initialization - move from Starting to Running or Paused based on goal
     async fn handle_agent_initialized(&mut self) {
-        let trace = self.trace.clone();
+        let trace = self.tool_ctx.trace.clone();
         let guard = trace.read().await;
         if let Some(ChatMessage::User { .. }) = guard.last() {
             self.set_state(InternalAgentState::Running).await;

@@ -1,26 +1,19 @@
-use super::brain::{Brain, ThinkerContext};
+use super::brain::{Brain, ThinkerContext, ToolBudgetRef};
 use super::builder::AgentBuilder;
 use super::error::AgentError;
 use super::{AgentRequest, PublicAgentState, ThinkerDecision};
 use crate::agent::Agent;
-use crate::logging::LoggingConfig;
 use crate::tools::tool;
 use crate::tools::{AnyTool, LsTool, ReadTool, ToolResult};
 use async_trait::async_trait;
 use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent, Function, ToolCall};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-static INIT_LOGGING: Once = Once::new();
-
-fn init_test_logging() {
-    INIT_LOGGING.call_once(|| {
-        let _ = LoggingConfig::from_env().init();
-    });
-}
+use crate::runners::test_helpers::init_test_logging;
 
 // Parameters for the sleeping tool
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -70,7 +63,11 @@ impl SleepingThinker {
 
 #[async_trait]
 impl Brain for SleepingThinker {
-    async fn next_step(&mut self, _: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         if !self.called_tool {
             self.called_tool = true;
             // On first call, use the sleeping tool
@@ -115,7 +112,11 @@ impl PausableThinker {
 
 #[async_trait]
 impl Brain for PausableThinker {
-    async fn next_step(&mut self, _: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         self.call_count += 1;
 
         match self.call_count {
@@ -381,7 +382,11 @@ impl RealToolsThinker {
 
 #[async_trait]
 impl Brain for RealToolsThinker {
-    async fn next_step(&mut self, _: ThinkerContext) -> Result<ThinkerDecision, AgentError> {
+    async fn next_step(
+        &mut self,
+        _: ThinkerContext,
+        _: ToolBudgetRef,
+    ) -> Result<ThinkerDecision, AgentError> {
         self.step += 1;
 
         match self.step {

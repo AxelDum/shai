@@ -12,8 +12,8 @@ pub mod states;
 #[cfg(test)]
 mod tests;
 
-pub use agent::ToolCallInfo;
 pub use agent::{Agent, AgentCore, AgentResult, TaskAgentResponse};
+pub use agent::{ToolBudget, ToolCache, ToolCallInfo};
 pub use states::{InternalAgentState, PublicAgentState};
 
 pub use protocol::{AgentController, AgentRequest, AgentResponse};
@@ -25,7 +25,7 @@ pub use events::{
 pub use output::StdoutEventManager;
 
 pub use crate::logging::LoggingConfig;
-pub use brain::{Brain, ThinkerContext, ThinkerDecision, ThinkerFlowControl};
+pub use brain::{Brain, ThinkerContext, ThinkerDecision, ThinkerFlowControl, ToolBudgetRef};
 pub use builder::AgentBuilder;
 pub use claims::{ClaimManager, PermissionError};
 pub use error::{AgentError, AgentExecutionError};

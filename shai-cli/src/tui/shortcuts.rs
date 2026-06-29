@@ -1,55 +1,117 @@
-/// Default keyboard shortcuts for the TUI.
-///
-/// This module provides a configurable shortcut system. Users can override
-/// defaults by setting environment variables prefixed with `SHAI_KEY_`.
-///
-/// Currently supported shortcuts:
-///   - `SHAI_KEY_TOGGLE_THEME`   — toggle dark/light theme (default: Ctrl+T)
-///   - `SHAI_KEY_CANCEL_TASK`    — cancel running agent task (default: Esc)
-///   - `SHAI_KEY_CLEAR_INPUT`    — clear input buffer (default: Esc x2)
-///   - `SHAI_KEY_PASTE`         — paste from clipboard (default: Ctrl+V)
-///   - `SHAI_KEY_EXIT`          — exit the TUI (default: Ctrl+C / Ctrl+D)
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use shai_core::config::tui::{KeyBinding, KeyCode as ConfigCode, KeyModifiers as ConfigKeyMods, TuiConfig};
+
+/// Wrapper around `TuiConfig` that provides convenient key-matching against `crossterm::event::KeyEvent`.
 pub struct Shortcuts {
-    pub toggle_theme: String,
-    pub cancel_task: String,
-    pub clear_input: String,
-    pub paste: String,
-    pub exit: String,
+    config: TuiConfig,
 }
 
-impl Default for Shortcuts {
-    fn default() -> Self {
-        Self {
-            toggle_theme: "ctrl+t".to_string(),
-            cancel_task: "esc".to_string(),
-            clear_input: "esc".to_string(),
-            paste: "ctrl+v".to_string(),
-            exit: "ctrl+c".to_string(),
+macro_rules! impl_shortcut_accessors {
+    ($($name:ident),+) => {
+        $(
+        pub fn $name(&self) -> &KeyBinding {
+            &self.config.shortcuts.$name
         }
-    }
+        )+
+    };
 }
 
 impl Shortcuts {
-    /// Load shortcuts from environment variables, falling back to defaults.
-    pub fn from_env() -> Self {
-        let defaults = Self::default();
-        Self {
-            toggle_theme: std::env::var("SHAI_KEY_TOGGLE_THEME").unwrap_or(defaults.toggle_theme),
-            cancel_task: std::env::var("SHAI_KEY_CANCEL_TASK").unwrap_or(defaults.cancel_task),
-            clear_input: std::env::var("SHAI_KEY_CLEAR_INPUT").unwrap_or(defaults.clear_input),
-            paste: std::env::var("SHAI_KEY_PASTE").unwrap_or(defaults.paste),
-            exit: std::env::var("SHAI_KEY_EXIT").unwrap_or(defaults.exit),
-        }
+    pub fn load() -> Self {
+        let config = TuiConfig::load();
+        Self { config }
     }
 
-    /// Return a human-readable list of all configured shortcuts.
-    pub fn descriptions(&self) -> Vec<(String, String)> {
-        vec![
-            ("toggle theme".to_string(), self.toggle_theme.clone()),
-            ("cancel task".to_string(), self.cancel_task.clone()),
-            ("clear input".to_string(), self.clear_input.clone()),
-            ("paste".to_string(), self.paste.clone()),
-            ("exit".to_string(), self.exit.clone()),
-        ]
+    pub fn config(&self) -> &TuiConfig {
+        &self.config
+    }
+
+    impl_shortcut_accessors!(
+        toggle_theme, exit, cancel_task, clear_input, paste, clear_screen, regenerate,
+        copy_response, expand_tool, session_picker, prompt_picker, cycle_agent_mode
+    );
+
+    pub fn matches(&self, key_event: &KeyEvent, binding: &KeyBinding) -> bool {
+        key_event_to_binding(key_event) == *binding
+    }
+}
+
+pub fn key_event_to_binding(event: &KeyEvent) -> KeyBinding {
+    let code = match event.code {
+        KeyCode::Char(c) => ConfigCode::Char(c),
+        KeyCode::Esc => ConfigCode::Escape,
+        KeyCode::Tab => ConfigCode::Tab,
+        KeyCode::Enter => ConfigCode::Enter,
+        KeyCode::Backspace => ConfigCode::Backspace,
+        KeyCode::Delete => ConfigCode::Delete,
+        KeyCode::Left => ConfigCode::Left,
+        KeyCode::Right => ConfigCode::Right,
+        KeyCode::Up => ConfigCode::Up,
+        KeyCode::Down => ConfigCode::Down,
+        KeyCode::PageUp => ConfigCode::PageUp,
+        KeyCode::PageDown => ConfigCode::PageDown,
+        KeyCode::Home => ConfigCode::Home,
+        KeyCode::End => ConfigCode::End,
+        _ => ConfigCode::Space,
+    };
+
+    let mut modifiers = ConfigKeyMods::NONE;
+    if event.modifiers.contains(KeyModifiers::SHIFT) {
+        modifiers = modifiers | ConfigKeyMods::SHIFT;
+    }
+    if event.modifiers.contains(KeyModifiers::CONTROL) {
+        modifiers = modifiers | ConfigKeyMods::CONTROL;
+    }
+    if event.modifiers.contains(KeyModifiers::ALT) {
+        modifiers = modifiers | ConfigKeyMods::ALT;
+    }
+    if event.modifiers.contains(KeyModifiers::SUPER) {
+        modifiers = modifiers | ConfigKeyMods::SUPER;
+    }
+
+    KeyBinding::new(code, modifiers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_defaults() {
+        let shortcuts = Shortcuts::load();
+        assert_eq!(shortcuts.toggle_theme(), &KeyBinding::new(ConfigCode::Char('t'), ConfigKeyMods::CONTROL));
+        assert_eq!(shortcuts.exit(), &KeyBinding::new(ConfigCode::Char('c'), ConfigKeyMods::CONTROL));
+    }
+
+    #[test]
+    fn test_match_ctrl_t() {
+        let shortcuts = Shortcuts::load();
+        let event = KeyEvent::new(
+            KeyCode::Char('t'),
+            KeyModifiers::CONTROL,
+        );
+        assert!(shortcuts.matches(&event, shortcuts.toggle_theme()));
+    }
+
+    #[test]
+    fn test_match_ctrl_l() {
+        let shortcuts = Shortcuts::load();
+        let event = KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL);
+        assert!(shortcuts.matches(&event, shortcuts.clear_screen()));
+    }
+
+    #[test]
+    fn test_match_shift_tab() {
+        let shortcuts = Shortcuts::load();
+        let event = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        assert!(shortcuts.matches(&event, shortcuts.cycle_agent_mode()));
+    }
+
+    #[test]
+    fn test_no_match_wrong_modifier() {
+        let shortcuts = Shortcuts::load();
+        let event = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE);
+        assert!(!shortcuts.matches(&event, shortcuts.toggle_theme()));
     }
 }

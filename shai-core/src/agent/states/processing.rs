@@ -13,16 +13,16 @@ impl AgentCore {
             InternalAgentEvent::BrainResult { result } => self.process_next_step(result).await,
             InternalAgentEvent::ToolsCompleted { any_denied } => {
                 if !any_denied {
-                    let edited_files = self.fs_operation_log.drain_edited_files().await;
+                    let edited_files = self.tool_ctx.fs_operation_log.drain_edited_files().await;
                     if !edited_files.is_empty() {
                         if let Some(diagnostics) = run_verification(
                             &edited_files,
-                            &self.working_dir,
-                            &self.verification_config,
+                            &self.tool_ctx.working_dir,
+                            &self.tool_ctx.verification_config,
                         )
                         .await
                         {
-                            self.trace.write().await.push(ChatMessage::Tool {
+                            self.tool_ctx.trace.write().await.push(ChatMessage::Tool {
                                 tool_call_id: "verification".to_string(),
                                 content: ChatMessageContent::Text(diagnostics),
                             });

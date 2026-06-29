@@ -7,15 +7,16 @@ use super::claims::ClaimManager;
 use super::AgentCore;
 use super::AgentError;
 use super::Brain;
+use crate::agent::agent::ToolContext;
 use crate::config::agent::{AgentConfig, CompactionConfig, VerificationConfig};
 use crate::config::config::ShaiConfig;
 use crate::runners::coder::CoderBrain;
 use crate::tools::mcp::mcp_oauth::signin_oauth;
 use crate::tools::{
-    create_mcp_client, get_mcp_tools, AnyTool, BashTool, EditTool, FetchTool, FindTool,
-    FsOperationLog, LsTool, McpConfig, ReadTool, TodoReadTool, TodoStorage, TodoWriteTool,
-    WriteTool,
+    create_mcp_client, create_tool, get_mcp_tools, AnyTool, FsOperationLog, McpConfig,
+    McpServerStatus, TodoStorage, TOOL_NAMES,
 };
+use crate::tools::skills::SkillTool;
 
 use tracing::{debug, warn};
 
@@ -32,6 +33,7 @@ pub struct AgentBuilder {
     pub fs_operation_log: Arc<FsOperationLog>,
     pub working_dir: Option<String>,
     pub todo_storage: Option<Arc<TodoStorage>>,
+    pub mcp_status: Vec<McpServerStatus>,
 }
 
 impl AgentBuilder {
@@ -87,6 +89,29 @@ impl AgentBuilder {
             fs_operation_log: Arc::new(FsOperationLog::new()),
             working_dir: None,
             todo_storage: None,
+            mcp_status: Vec::new(),
+        }
+    }
+
+    /// Create a builder for a sub-agent that inherits shared state from a parent `ToolContext`.
+    ///
+    /// Sub-agents get their own `trace`, `tool_cache`, and `tool_budget` (fresh copies),
+    /// but share `claims`, `todo_storage`, and `fs_operation_log` with the parent.
+    pub async fn for_sub_agent(parent: &ToolContext, brain: Box<dyn Brain>) -> Self {
+        let permissions = parent.claims.read().await.clone();
+        Self {
+            session_id: Uuid::new_v4().to_string(),
+            brain,
+            goal: None,
+            trace: vec![],
+            available_tools: vec![],
+            permissions,
+            compaction_config: parent.compaction_config.clone(),
+            verification_config: parent.verification_config.clone(),
+            fs_operation_log: parent.fs_operation_log.clone(),
+            working_dir: parent.working_dir.clone(),
+            todo_storage: Some(parent.todo_storage.clone()),
+            mcp_status: Vec::new(),
         }
     }
 
@@ -97,25 +122,16 @@ impl AgentBuilder {
     }
 
     /// Create default set of tools
-    fn create_default_tools(
+    pub fn create_default_tools(
         fs_log: Arc<FsOperationLog>,
     ) -> (Vec<Box<dyn AnyTool>>, Arc<TodoStorage>) {
         let todo_storage = Arc::new(TodoStorage::new());
+        let exclude_patterns = CompactionConfig::default().find_exclude_patterns.clone();
 
-        let tools: Vec<Box<dyn AnyTool>> =
-            vec![
-                Box::new(BashTool::new()),
-                Box::new(EditTool::new(fs_log.clone())),
-                Box::new(FetchTool::new()),
-                Box::new(FindTool::new().with_exclude_patterns(
-                    CompactionConfig::default().find_exclude_patterns.clone(),
-                )),
-                Box::new(LsTool::new()),
-                Box::new(ReadTool::new(fs_log.clone())),
-                Box::new(TodoReadTool::new(todo_storage.clone())),
-                Box::new(TodoWriteTool::new(todo_storage.clone())),
-                Box::new(WriteTool::new(fs_log)),
-            ];
+        let tools: Vec<Box<dyn AnyTool>> = TOOL_NAMES
+            .iter()
+            .filter_map(|name| create_tool(name, fs_log.clone(), todo_storage.clone(), &exclude_patterns))
+            .collect();
 
         (tools, todo_storage)
     }
@@ -211,7 +227,7 @@ impl AgentBuilder {
 
         // Create tools
         let fs_log = Arc::new(FsOperationLog::new());
-        let (tools, todo_storage) =
+        let (tools, todo_storage, mcp_status) =
             Self::create_tools_from_config(&mut config, fs_log.clone()).await?;
 
         // Display available tools by category
@@ -242,6 +258,7 @@ impl AgentBuilder {
         builder.compaction_config = config.compaction.clone();
         builder.verification_config = config.verification.clone();
         builder.fs_operation_log = fs_log;
+        builder.mcp_status = mcp_status;
         Ok(builder
             .tools(tools)
             .set_todo_storage(todo_storage)
@@ -249,29 +266,19 @@ impl AgentBuilder {
     }
 
     /// Create tools from config
-    async fn create_tools_from_config(
+async fn create_tools_from_config(
         config: &mut AgentConfig,
         fs_log: Arc<FsOperationLog>,
-    ) -> Result<(Vec<Box<dyn AnyTool>>, Arc<TodoStorage>), AgentError> {
+    ) -> Result<(Vec<Box<dyn AnyTool>>, Arc<TodoStorage>, Vec<McpServerStatus>), AgentError> {
         let mut tools: Vec<Box<dyn AnyTool>> = Vec::new();
+        let mut mcp_status: Vec<McpServerStatus> = Vec::new();
 
         // Create shared storage for todo tools
         let todo_storage = Arc::new(TodoStorage::new());
 
         // Add builtin tools based on config
         let builtin_tools_to_add = if config.tools.builtin.contains(&"*".to_string()) {
-            // Add all builtin tools
-            vec![
-                "bash",
-                "edit",
-                "fetch",
-                "find",
-                "ls",
-                "read",
-                "todo_read",
-                "todo_write",
-                "write",
-            ]
+            TOOL_NAMES.iter().map(|s| *s).collect::<Vec<_>>()
         } else {
             // Add only specified tools
             config.tools.builtin.iter().map(|s| s.as_str()).collect()
@@ -287,20 +294,14 @@ impl AgentBuilder {
                 continue;
             }
 
-            match tool_name {
-                "bash" => tools.push(Box::new(BashTool::new())),
-                "edit" => tools.push(Box::new(EditTool::new(fs_log.clone()))),
-                "fetch" => tools.push(Box::new(FetchTool::new())),
-                "find" => tools
-                    .push(Box::new(FindTool::new().with_exclude_patterns(
-                        config.compaction.find_exclude_patterns.clone(),
-                    ))),
-                "ls" => tools.push(Box::new(LsTool::new())),
-                "read" => tools.push(Box::new(ReadTool::new(fs_log.clone()))),
-                "todo_read" => tools.push(Box::new(TodoReadTool::new(todo_storage.clone()))),
-                "todo_write" => tools.push(Box::new(TodoWriteTool::new(todo_storage.clone()))),
-                "write" => tools.push(Box::new(WriteTool::new(fs_log.clone()))),
-                _ => {
+            match create_tool(
+                tool_name,
+                fs_log.clone(),
+                todo_storage.clone(),
+                &config.compaction.find_exclude_patterns.clone(),
+            ) {
+                Some(tool) => tools.push(tool),
+                None => {
                     return Err(AgentError::ConfigurationError(format!(
                         "Unknown builtin tool: {}",
                         tool_name
@@ -326,6 +327,12 @@ impl AgentBuilder {
                         return Err(e);
                     } else {
                         warn!(target: "agent::builder", "MCP '{}' failed to connect: {}. Skipping (not required).", mcp_name, e);
+                        mcp_status.push(McpServerStatus {
+                            name: mcp_name.clone(),
+                            connected: false,
+                            tool_count: 0,
+                            error: Some(e.to_string()),
+                        });
                         continue;
                     }
                 }
@@ -345,10 +352,19 @@ impl AgentBuilder {
                         )));
                     } else {
                         warn!(target: "agent::builder", "MCP '{}' failed to get tools: {}. Skipping (not required).", mcp_name, e);
+                        mcp_status.push(McpServerStatus {
+                            name: mcp_name.clone(),
+                            connected: false,
+                            tool_count: 0,
+                            error: Some(e.to_string()),
+                        });
                         continue;
                     }
                 }
             };
+
+            // Count tools before filtering
+            let mut added_count = 0;
 
             // Check if we should add all tools or filter by enabled_tools
             if mcp_tool_config.enabled_tools.contains(&"*".to_string()) {
@@ -357,6 +373,7 @@ impl AgentBuilder {
                     let tool_name = tool.name();
                     if !mcp_tool_config.excluded_tools.contains(&tool_name) {
                         tools.push(tool);
+                        added_count += 1;
                     }
                 }
             } else {
@@ -367,6 +384,7 @@ impl AgentBuilder {
                         && !mcp_tool_config.excluded_tools.contains(&tool_name)
                     {
                         tools.push(tool);
+                        added_count += 1;
                     }
                 }
 
@@ -385,6 +403,13 @@ impl AgentBuilder {
                     }
                 }
             }
+
+            mcp_status.push(McpServerStatus {
+                name: mcp_name.clone(),
+                connected: true,
+                tool_count: added_count,
+                error: None,
+            });
         }
 
         // Save config if OAuth flow added new tokens
@@ -394,7 +419,7 @@ impl AgentBuilder {
             })?;
         }
 
-        Ok((tools, todo_storage))
+        Ok((tools, todo_storage, mcp_status))
     }
 
     /// Handle OAuth flow for MCP connections if needed

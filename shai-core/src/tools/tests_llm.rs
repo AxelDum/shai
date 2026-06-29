@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod llm_integration_tests {
     use crate::config::config::ShaiConfig;
-    use crate::logging::LoggingConfig;
+    use crate::runners::test_helpers::init_test_logging;
     use crate::tools::{
         AnyTool, BashTool, EditTool, FetchTool, FindTool, FsOperationLog, LsTool, ReadTool,
         TodoReadTool, TodoStorage, TodoWriteTool, WriteTool,
@@ -11,16 +11,7 @@ mod llm_integration_tests {
     };
     use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
     use std::sync::Arc;
-    use std::sync::Once;
     use tracing::debug;
-
-    static INIT_LOGGING: Once = Once::new();
-
-    fn init_test_logging() {
-        INIT_LOGGING.call_once(|| {
-            let _ = LoggingConfig::from_env().init();
-        });
-    }
 
     /// Test a tool with the first available LLM provider
     async fn test_tool_with_llm(

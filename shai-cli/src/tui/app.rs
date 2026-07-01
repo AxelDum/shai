@@ -241,7 +241,7 @@ impl App<'_> {
             self.input
                 .set_agent_running(!matches!(new_status, PublicAgentState::Paused));
             self.status_bar
-                .set_agent_mode(&format!("{:?}", self.input.agent_mode()));
+                .set_agent_mode(&self.input.agent_mode().status_bar_str());
             if matches!(new_status, PublicAgentState::Paused) {
                 if let Some(ref agent_ref) = self.agent {
                     if let Ok(trace) = agent_ref.controller.get_trace().await {

@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
 };
 use shai_llm::ToolCallMethod;
-use tui_textarea::{Input as TextInput, TextArea};
+use ratatui_textarea::{Input as TextInput, TextArea};
 
 use crate::tui::helper::HelpArea;
 
@@ -258,11 +258,11 @@ impl InputArea<'_> {
 impl InputArea<'_> {
     fn move_cursor_to_end_of_text(&mut self) {
         for _ in 0..self.input.lines().len().saturating_sub(1) {
-            self.input.move_cursor(tui_textarea::CursorMove::Down);
+            self.input.move_cursor(ratatui_textarea::CursorMove::Down);
         }
         if let Some(last_line) = self.input.lines().last() {
             for _ in 0..last_line.len() {
-                self.input.move_cursor(tui_textarea::CursorMove::Forward);
+                self.input.move_cursor(ratatui_textarea::CursorMove::Forward);
             }
         }
     }
@@ -277,13 +277,14 @@ impl InputArea<'_> {
     // Replace @search with the file path
     fn replace_file_search(&mut self, file_path: &str) {
         if let Some((at_pos, search_text)) = FileSuggestion::detect_file_search(&self.input) {
-            let (_row, _) = self.input.cursor();
+            let cursor = self.input.cursor();
+            let _row = cursor.0;
 
             let chars_to_delete = 1 + search_text.len();
 
-            self.input.move_cursor(tui_textarea::CursorMove::Head);
+            self.input.move_cursor(ratatui_textarea::CursorMove::Head);
             for _ in 0..at_pos {
-                self.input.move_cursor(tui_textarea::CursorMove::Forward);
+                self.input.move_cursor(ratatui_textarea::CursorMove::Forward);
             }
 
             for _ in 0..chars_to_delete {
@@ -417,7 +418,8 @@ impl InputArea<'_> {
                 }
 
                 // Get current cursor position
-                let (cursor_row, _) = self.input.cursor();
+                let cursor = self.input.cursor();
+                let cursor_row = cursor.0;
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
 
                 // Navigate history only if:
@@ -435,7 +437,7 @@ impl InputArea<'_> {
                     self.history_index -= 1;
                     self.load_historic_prompt(self.history_index);
                 } else if !is_empty && cursor_row > 0 {
-                    self.input.move_cursor(tui_textarea::CursorMove::Up);
+                    self.input.move_cursor(ratatui_textarea::CursorMove::Up);
                 }
             }
             KeyCode::Down => {
@@ -451,7 +453,8 @@ impl InputArea<'_> {
                 }
 
                 // Get current cursor position
-                let (cursor_row, _) = self.input.cursor();
+                let cursor = self.input.cursor();
+                let cursor_row = cursor.0;
                 let is_empty = self.input.lines().iter().all(|line| line.is_empty());
                 let line_count = self.input.lines().len();
 
@@ -474,7 +477,7 @@ impl InputArea<'_> {
                         }
                     }
                 } else if !is_empty && cursor_row < line_count - 1 {
-                    self.input.move_cursor(tui_textarea::CursorMove::Down);
+                    self.input.move_cursor(ratatui_textarea::CursorMove::Down);
                 }
             }
             _ => {

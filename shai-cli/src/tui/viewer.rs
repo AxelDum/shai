@@ -5,8 +5,8 @@ use crossterm::terminal::LeaveAlternateScreen;
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Text;
+use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation};
 use ratatui::Frame as RataFrame;
 use ratatui::Terminal;
@@ -55,8 +55,7 @@ impl AlternateScreenViewer {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan))
-            .title(title.trim())
-            .title_style(Style::default().add_modifier(Modifier::BOLD))
+            .title(Line::from(title.trim()).add_modifier(Modifier::BOLD))
             .padding(Padding::new(1, 1, 1, 1));
 
         let inner = block.inner(area);

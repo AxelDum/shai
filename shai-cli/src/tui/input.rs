@@ -175,16 +175,6 @@ impl InputArea<'_> {
         }
     }
 
-    #[allow(dead_code)] // TODO: wire custom status messages to the status bar
-    pub fn set_status(&mut self, text: &str) {
-        self.status_message = Some(text.to_string());
-    }
-
-    #[allow(dead_code)] // TODO: expose animation state to external components
-    pub fn is_animating(&self) -> bool {
-        self.animation_start.is_some()
-    }
-
     fn get_status_text(&self) -> String {
         if let Some(ref msg) = self.status_message {
             format!(" {}", msg)
@@ -211,14 +201,13 @@ impl InputArea<'_> {
         self.method = method;
     }
 
-    #[allow(dead_code)] // TODO: wire tool call method display to the status bar
-    pub fn method_str(&self) -> &str {
+    pub fn tool_call_method_str(&self) -> &'static str {
         match self.method {
-            ToolCallMethod::Auto => "\u{1f6e0}\u{fe0f} tool call try all methods",
-            ToolCallMethod::FunctionCall => "\u{1f6e0}\u{fe0f} function call (auto)",
-            ToolCallMethod::FunctionCallRequired => "\u{1f6e0}\u{fe0f} function call (required)",
-            ToolCallMethod::StructuredOutput => "\u{1f6e0}\u{fe0f} structured output",
-            ToolCallMethod::Parsing => "\u{1f6e9}\u{fe0f} parsing",
+            ToolCallMethod::Auto => "",
+            ToolCallMethod::FunctionCall => "",
+            ToolCallMethod::FunctionCallRequired => "\u{1f6e0}\u{fe0f}fc2",
+            ToolCallMethod::StructuredOutput => "\u{1f6e0}\u{fe0f}so",
+            ToolCallMethod::Parsing => "\u{1f6e9}\u{fe0f}ps",
         }
     }
 }

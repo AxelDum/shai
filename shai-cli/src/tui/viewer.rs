@@ -1,9 +1,7 @@
 use ansi_to_tui::IntoText;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
+use crossterm::terminal::LeaveAlternateScreen;
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
@@ -143,6 +141,5 @@ impl crate::tui::modal::Modal for AlternateScreenViewer {
 impl Drop for AlternateScreenViewer {
     fn drop(&mut self) {
         let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = disable_raw_mode();
     }
 }

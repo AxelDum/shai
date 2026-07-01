@@ -2,9 +2,7 @@ use std::io::{self, stdout};
 
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
 use ratatui::{layout::Rect, prelude::CrosstermBackend, Frame, Terminal};
 
@@ -15,7 +13,6 @@ pub trait Modal {
 }
 
 pub async fn run_alternate_screen<M: Modal>(modal: &mut M) -> io::Result<M::Output> {
-    enable_raw_mode()?;
     execute!(stdout(), EnterAlternateScreen)?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
@@ -43,7 +40,6 @@ pub async fn run_alternate_screen<M: Modal>(modal: &mut M) -> io::Result<M::Outp
     .await;
 
     let _ = execute!(stdout(), LeaveAlternateScreen);
-    let _ = disable_raw_mode();
 
     result
 }

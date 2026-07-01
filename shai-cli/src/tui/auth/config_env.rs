@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
@@ -159,11 +159,13 @@ impl ModalEnvs {
             }
             KeyCode::Tab => {
                 if !self.input_fields.is_empty() {
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                        self.current_field = (self.current_field - 1) % self.input_fields.len();
-                    } else {
-                        self.current_field = (self.current_field + 1) % self.input_fields.len();
-                    }
+                    self.current_field = (self.current_field + 1) % self.input_fields.len();
+                }
+                NavAction::None
+            }
+            KeyCode::BackTab => {
+                if !self.input_fields.is_empty() {
+                    self.current_field = (self.current_field - 1) % self.input_fields.len();
                 }
                 NavAction::None
             }

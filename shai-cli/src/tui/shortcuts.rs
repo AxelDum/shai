@@ -42,6 +42,7 @@ pub fn key_event_to_binding(event: &KeyEvent) -> KeyBinding {
         KeyCode::Char(c) => ConfigCode::Char(c),
         KeyCode::Esc => ConfigCode::Escape,
         KeyCode::Tab => ConfigCode::Tab,
+        KeyCode::BackTab => ConfigCode::Tab,
         KeyCode::Enter => ConfigCode::Enter,
         KeyCode::Backspace => ConfigCode::Backspace,
         KeyCode::Delete => ConfigCode::Delete,
@@ -104,7 +105,7 @@ mod tests {
     #[test]
     fn test_match_shift_tab() {
         let shortcuts = Shortcuts::load();
-        let event = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        let event = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
         assert!(shortcuts.matches(&event, shortcuts.cycle_agent_mode()));
     }
 

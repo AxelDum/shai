@@ -93,10 +93,6 @@ impl StatusBar {
         self.theme.palette()
     }
 
-    pub fn update(&mut self, info: StatusBarInfo) {
-        self.info = info;
-    }
-
     pub fn set_model(&mut self, model: &str) {
         self.info.model = model.to_string();
     }

@@ -66,6 +66,7 @@ impl ShaiPtyManager {
         })
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn get_session_id(&self) -> &str {
         &self.session_id
     }

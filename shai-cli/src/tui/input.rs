@@ -85,7 +85,7 @@ impl InputArea<'_> {
         Self {
             agent_running: false,
             input: TextArea::default(),
-            placeholder: "? for shortcuts".to_string(),
+            placeholder: "? for help".to_string(),
             current_draft: None,
             animation_start: None,
             status_message: None,
@@ -175,15 +175,12 @@ impl InputArea<'_> {
         }
     }
 
-    pub fn with_placeholder(mut self, placeholder: &str) -> Self {
-        self.placeholder = placeholder.to_string();
-        self
-    }
-
+    #[allow(dead_code)] // TODO: wire custom status messages to the status bar
     pub fn set_status(&mut self, text: &str) {
         self.status_message = Some(text.to_string());
     }
 
+    #[allow(dead_code)] // TODO: expose animation state to external components
     pub fn is_animating(&self) -> bool {
         self.animation_start.is_some()
     }
@@ -214,6 +211,7 @@ impl InputArea<'_> {
         self.method = method;
     }
 
+    #[allow(dead_code)] // TODO: wire tool call method display to the status bar
     pub fn method_str(&self) -> &str {
         match self.method {
             ToolCallMethod::Auto => "\u{1f6e0}\u{fe0f} tool call try all methods",
@@ -561,7 +559,7 @@ impl InputArea<'_> {
         f.render_widget(">".to_string(), pad);
 
         // Set placeholder and block
-        self.input.set_placeholder_text("? for help");
+        self.input.set_placeholder_text(&self.placeholder);
         self.input
             .set_placeholder_style(Style::default().fg(self.palette.placeholder));
         self.input

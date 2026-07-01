@@ -23,10 +23,6 @@ impl Shortcuts {
         Self { config }
     }
 
-    pub fn config(&self) -> &TuiConfig {
-        &self.config
-    }
-
     impl_shortcut_accessors!(
         toggle_theme, exit, cancel_task, clear_input, paste, clear_screen, regenerate,
         copy_response, expand_tool, session_picker, prompt_picker, cycle_agent_mode

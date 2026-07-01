@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use super::command::COMMANDS;
+use super::command::CommandRegistry;
 use shai_core::config::tui::{KeyBinding, TuiConfig};
 
 pub struct HelpArea;
@@ -27,7 +27,7 @@ impl HelpArea {
             "  Available Commands:".to_string(),
         ];
 
-        for cmd in COMMANDS.iter() {
+        for cmd in CommandRegistry::commands().iter() {
             let args_suffix = if cmd.args.is_empty() {
                 String::new()
             } else {

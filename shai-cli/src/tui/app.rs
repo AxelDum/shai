@@ -19,7 +19,7 @@ use tracing::{debug, warn};
 
 use super::agent_meta::AgentMeta;
 use super::agent_state::AgentState;
-use super::command::CommandRegistry;
+
 use super::handler::AgentHandler;
 use super::input::InputArea;
 use super::renderer::RenderManager;
@@ -50,7 +50,6 @@ pub struct App<'a> {
     pub(crate) ui_state: UiState<'a>,
     pub(crate) renderer: RenderManager,
     pub(crate) input: InputArea<'a>,
-    pub(crate) command_registry: CommandRegistry,
     pub(crate) shortcuts: Shortcuts,
     pub(crate) status_bar: StatusBar,
     pub(crate) initial_modal: InitialModal,
@@ -174,6 +173,8 @@ impl App<'_> {
     }
 
     pub(crate) async fn restore_session(&mut self, session_id: &str) -> io::Result<()> {
+        use openai_dive::v1::resources::chat::{ChatMessage, ChatMessageContent};
+
         let session =
             shai_core::session::SessionPersist::load_session(session_id).map_err(|e| {
                 io::Error::other(format!("Failed to load session {}: {}", session_id, e))
@@ -186,6 +187,19 @@ impl App<'_> {
         if let Some(ref agent) = self.agent {
             let _ = agent.controller.load_trace(session.trace.clone()).await;
         }
+
+        let user_inputs: Vec<String> = session
+            .trace
+            .iter()
+            .filter_map(|msg| match msg {
+                ChatMessage::User {
+                    content: ChatMessageContent::Text(text),
+                    ..
+                } => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        self.input.set_history(user_inputs);
 
         self.render_restored_trace(&session.trace);
         self.renderer.history_mut().scroll_to_bottom();
@@ -293,7 +307,6 @@ impl App<'_> {
             ui_state: UiState::new(),
             renderer: RenderManager::new(),
             input,
-            command_registry: CommandRegistry::new(),
             shortcuts,
             status_bar: StatusBar::new(theme),
             initial_modal: InitialModal::None,

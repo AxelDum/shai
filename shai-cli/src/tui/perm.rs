@@ -17,7 +17,7 @@ use shai_core::{
     agent::{events::PermissionRequest, output::PrettyFormatter, PermissionResponse},
     tools::{ToolCall, ToolResult},
 };
-// Removed tui_textarea dependency for colored preview
+// Removed ratatui_textarea dependency for colored preview
 
 use super::theme::ThemePalette;
 
@@ -199,8 +199,7 @@ impl PermissionWidget<'_> {
                 top: 0,
                 bottom: 0,
             })
-            .title(title)
-            .title_style(Style::default().fg(self.palette.input_text))
+            .title(title.fg(self.palette.input_text))
             .border_style(Style::default().fg(self.palette.border));
 
         let inner = block.inner(tool);

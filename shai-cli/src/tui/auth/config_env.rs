@@ -13,7 +13,7 @@ use shai_llm::provider::ProviderInfo;
 use std::collections::HashMap;
 use std::io;
 use tokio::task::JoinHandle;
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 use super::auth::NavAction;
 
@@ -170,7 +170,7 @@ impl ModalEnvs {
             }
             _ => {
                 if self.current_field < self.input_fields.len() {
-                    let event = tui_textarea::Input::from(Event::Key(key_event));
+                    let event = ratatui_textarea::Input::from(Event::Key(key_event));
                     self.input_fields[self.current_field].input(event);
                 }
                 NavAction::None

@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem},
     Frame,
 };
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 use super::theme::ThemePalette;
 
@@ -153,7 +153,8 @@ impl FileSuggestion {
     }
 
     pub fn detect_file_search(input: &TextArea<'_>) -> Option<(usize, String)> {
-        let (row, col) = input.cursor();
+        let cursor = input.cursor();
+        let (row, col) = (cursor.0, cursor.1);
         let line = input.lines().get(row)?;
 
         let chars: Vec<char> = line.chars().collect();

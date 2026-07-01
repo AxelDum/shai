@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use ansi_to_tui::IntoText;
-use cli_clipboard::ClipboardProvider;
+use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 
@@ -185,8 +185,8 @@ impl App<'_> {
         if self.shortcuts.matches(&key_event, self.shortcuts.copy_response()) {
             let last_response = self.agent_state.session_manager().last_assistant_response();
             if !last_response.is_empty() {
-                if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
-                    let _ = ctx.set_contents(last_response.to_string());
+                if let Ok(mut ctx) = Clipboard::new() {
+                    let _ = ctx.set_text(last_response.to_string());
                     self.notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {

@@ -197,7 +197,7 @@ impl App<'_> {
 
         if self.shortcuts.matches(&key_event, self.shortcuts.cycle_agent_mode()) {
             let mode = self.input.cycle_agent_mode();
-            self.status_bar.set_agent_mode(&format!("{:?}", mode));
+            self.status_bar.set_agent_mode(&mode.status_bar_str());
             if let Some(ref agent) = self.agent {
                 match mode {
                     AgentMode::Plan => {
@@ -289,7 +289,7 @@ impl App<'_> {
                     ) {
                         let _ = agent.controller.sudo().await;
                         self.input.set_agent_mode(AgentMode::Auto);
-                        self.status_bar.set_agent_mode("Auto");
+                        self.status_bar.set_agent_mode(&AgentMode::Auto.status_bar_str());
                     }
                     if let Err(_) = agent
                         .controller

@@ -28,6 +28,17 @@ pub enum AgentMode {
     Auto,
 }
 
+impl AgentMode {
+    pub fn status_bar_str(&self) -> String {
+        let symbol = match self {
+            AgentMode::Plan => "\u{2612}",   // ☒
+            AgentMode::Manual => "\u{2610}",  // ☐
+            AgentMode::Auto => "\u{2611}",   // ☑
+        };
+        format!("{} {:?}", symbol, self)
+    }
+}
+
 pub enum UserAction {
     Nope,
     CancelTask,
@@ -205,9 +216,9 @@ impl InputArea<'_> {
         match self.method {
             ToolCallMethod::Auto => "",
             ToolCallMethod::FunctionCall => "",
-            ToolCallMethod::FunctionCallRequired => "\u{1f6e0}\u{fe0f}fc2",
-            ToolCallMethod::StructuredOutput => "\u{1f6e0}\u{fe0f}so",
-            ToolCallMethod::Parsing => "\u{1f6e9}\u{fe0f}ps",
+            ToolCallMethod::FunctionCallRequired => "\u{2A10}fc2",
+            ToolCallMethod::StructuredOutput => "\u{2A10}so",
+            ToolCallMethod::Parsing => "\u{2A10}ps",
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::io;
 use ratatui::{
@@ -345,8 +345,8 @@ impl InputArea<'_> {
         // Check paste binding
         if binding == self.paste_binding {
             // Handle Ctrl+V or Cmd+V paste directly from clipboard
-            if let Ok(mut ctx) = ClipboardContext::new() {
-                if let Ok(text) = ctx.get_contents() {
+            if let Ok(mut ctx) = Clipboard::new() {
+                if let Ok(text) = ctx.get_text() {
                     self.input.insert_str(text);
                     return UserAction::Nope;
                 }

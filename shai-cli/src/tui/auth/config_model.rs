@@ -63,10 +63,6 @@ impl ModalModel {
         }
     }
 
-    pub fn available_models(&self) -> &[String] {
-        &self.filtered_models
-    }
-
     fn filter_models(&mut self) {
         if self.search_query.is_empty() {
             self.filtered_models = self.all_models.clone();
@@ -95,7 +91,6 @@ impl ModalModel {
 
         // Keep selection in the middle range when possible
         let middle_start = SCROLL_MARGIN;
-        let middle_end = MAX_VISIBLE_MODELS - SCROLL_MARGIN - 1;
 
         if self.selected_index < middle_start {
             // Near the top, show from beginning
@@ -178,11 +173,6 @@ impl ModalModel {
         let error_height = if self.error_message.is_some() { 2 } else { 0 };
         let help_height = 2;
         visible_models + search_bar_height + error_height + help_height
-    }
-
-    pub fn height(&self) -> usize {
-        let borders_with_padding = 4;
-        borders_with_padding + self.inner_height()
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {

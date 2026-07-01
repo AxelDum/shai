@@ -19,7 +19,7 @@ use shai_core::{
 };
 // Removed tui_textarea dependency for colored preview
 
-use super::theme::{ThemePalette, SHAI_YELLOW};
+use super::theme::ThemePalette;
 
 pub enum PermissionModalAction {
     Nope,
@@ -36,7 +36,6 @@ pub struct PermissionWidget<'a> {
     pub remaining_perms: usize,
 
     selected_index: usize,
-    formatted_request: String,
     preview_text: Text<'a>,
     scroll_offset: usize,
     scroll_state: ScrollbarState,
@@ -62,7 +61,6 @@ impl PermissionWidget<'_> {
             request,
             selected_index: 0,
             remaining_perms: total,
-            formatted_request,
             preview_text,
             scroll_offset: 0,
             scroll_state: ScrollbarState::new(content_length),

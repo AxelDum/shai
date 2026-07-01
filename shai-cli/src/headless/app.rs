@@ -15,6 +15,7 @@ use shai_llm::LlmClient;
 
 pub enum AgentKind {
     Coder,
+    #[allow(dead_code)] // TODO: reserved for future "searcher" agent mode
     Searcher,
 }
 
@@ -127,10 +128,11 @@ impl AppHeadless {
 
         match result {
             Ok(AgentResult {
-                success,
-                message,
+                success: _success,
+                message: _message,
                 trace: agent_trace,
             }) => {
+                // TODO: use `success` to set exit code and `message` for summary output
                 if trace {
                     println!("{}", serde_json::to_string_pretty(&agent_trace)?);
                 } else {

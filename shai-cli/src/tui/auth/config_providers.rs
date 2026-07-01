@@ -20,13 +20,6 @@ pub struct ModalProviders {
     selected_provider: usize,
 }
 
-#[derive(Debug)]
-pub enum ProviderAction {
-    None,
-    Selected(usize),
-    Exit,
-}
-
 impl ModalProviders {
     pub fn new(config: ShaiConfig, providers: Vec<ProviderInfo>) -> Self {
         Self {
@@ -34,14 +27,6 @@ impl ModalProviders {
             providers,
             selected_provider: 0,
         }
-    }
-
-    pub fn selected_provider(&self) -> ProviderInfo {
-        self.providers[self.selected_provider].clone()
-    }
-
-    pub fn providers(&self) -> &[ProviderInfo] {
-        &self.providers
     }
 
     pub fn extract_state(self) -> (ShaiConfig, Vec<ProviderInfo>, ProviderInfo) {
@@ -122,9 +107,5 @@ impl ModalProviders {
             )]),
             help,
         );
-    }
-
-    pub fn height(&self) -> usize {
-        2 + self.providers.len() + 1
     }
 }

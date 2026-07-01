@@ -50,10 +50,6 @@ impl AgentPicker {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.agents.is_empty()
-    }
-
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<AgentPickerAction> {
         if key.kind != KeyEventKind::Press {
             return None;

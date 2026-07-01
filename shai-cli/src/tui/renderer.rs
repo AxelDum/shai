@@ -18,6 +18,7 @@ impl RenderManager {
         }
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn history(&self) -> &ConversationHistory {
         &self.history
     }
@@ -28,10 +29,6 @@ impl RenderManager {
 
     pub fn formatter(&self) -> &PrettyFormatter {
         &self.formatter
-    }
-
-    pub fn formatter_mut(&mut self) -> &mut PrettyFormatter {
-        &mut self.formatter
     }
 }
 

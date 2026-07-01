@@ -69,7 +69,7 @@ impl FileSuggestion {
     }
 
     pub fn update(&mut self, input: &TextArea<'_>) {
-        if let Some((at_pos, search)) = Self::detect_file_search(input) {
+        if let Some((_at_pos, search)) = Self::detect_file_search(input) {
             if self.search.as_deref() != Some(&search) {
                 self.search = Some(search.clone());
                 self.suggestions = self.search_files(&search);
@@ -222,7 +222,7 @@ impl FileSuggestion {
     }
 }
 
-use super::command::COMMANDS;
+use super::command::CommandRegistry;
 
 pub struct CommandSuggestion {
     suggestions: Vec<String>,
@@ -231,7 +231,7 @@ pub struct CommandSuggestion {
 
 impl CommandSuggestion {
     fn all_commands() -> Vec<&'static str> {
-        COMMANDS.iter().map(|c| c.name).collect()
+        CommandRegistry::commands().iter().map(|c| c.name).collect()
     }
 
     pub fn new() -> Self {

@@ -14,6 +14,7 @@ pub struct ShaiSessionServer {
     socket_path: String,
     shutdown: Arc<AtomicBool>,
     pending_command: Arc<Mutex<Option<String>>>,
+    output_buffer_size: usize,
 }
 
 impl ShaiSessionServer {
@@ -23,6 +24,7 @@ impl ShaiSessionServer {
             socket_path: format!("/tmp/shai_history_{}", session_id),
             shutdown: Arc::new(AtomicBool::new(false)),
             pending_command: Arc::new(Mutex::new(None)),
+            output_buffer_size,
         }
     }
 
@@ -41,6 +43,7 @@ impl ShaiSessionServer {
         let socket_path = self.socket_path.clone();
         let shutdown = Arc::clone(&self.shutdown);
         let pending_command = Arc::clone(&self.pending_command);
+        let output_buffer_size = self.output_buffer_size;
 
         thread::spawn(move || {
             for stream in listener.incoming() {
@@ -52,8 +55,9 @@ impl ShaiSessionServer {
                     Ok(stream) => {
                         let history = Arc::clone(&history);
                         let pending_command = Arc::clone(&pending_command);
+                        let output_buffer_size = output_buffer_size;
                         thread::spawn(move || {
-                            if let Err(e) = Self::handle_client(stream, history, pending_command) {
+                            if let Err(e) = Self::handle_client(stream, history, pending_command, output_buffer_size) {
                                 eprintln!("Error handling client: {}", e);
                             }
                         });
@@ -82,10 +86,11 @@ impl ShaiSessionServer {
         mut stream: UnixStream,
         history: Arc<Mutex<CommandHistory>>,
         pending_command: Arc<Mutex<Option<String>>>,
+        output_buffer_size: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let request = ShaiProtocol::read_request(&mut stream)?;
 
-        let response = Self::process_request(request, &history, &pending_command);
+        let response = Self::process_request(request, &history, &pending_command, output_buffer_size);
         ShaiProtocol::write_response(&mut stream, &response)?;
 
         Ok(())
@@ -95,6 +100,7 @@ impl ShaiSessionServer {
         request: ShaiRequest,
         history_ref: &Arc<Mutex<CommandHistory>>,
         pending_command_ref: &Arc<Mutex<Option<String>>>,
+        output_buffer_size: usize,
     ) -> ShaiResponse {
         match request {
             ShaiRequest::GetAllCmd => {
@@ -198,7 +204,7 @@ impl ShaiSessionServer {
 
                 match history_ref.lock() {
                     Ok(mut history) => {
-                        let entry = CommandEntry::new(cmd, 1024);
+                        let entry = CommandEntry::new(cmd, output_buffer_size);
                         history.enqueue(entry);
                         ShaiResponse::Ok {
                             data: ResponseData::Empty,

@@ -81,10 +81,6 @@ impl ToolConfig {
         Self::default()
     }
 
-    pub fn with_tools(tools: Vec<ToolName>) -> Self {
-        Self { tools }
-    }
-
     pub fn remove_tools(mut self, tools_to_remove: Vec<ToolName>) -> Self {
         self.tools.retain(|tool| !tools_to_remove.contains(tool));
         self
@@ -97,10 +93,6 @@ impl ToolConfig {
             }
         }
         self
-    }
-
-    pub fn list_tools(&self) -> Vec<String> {
-        self.tools.iter().map(|t| t.name().to_string()).collect()
     }
 
     pub fn build_toolbox(&self) -> Vec<Box<dyn AnyTool>> {

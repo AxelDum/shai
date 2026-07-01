@@ -32,10 +32,6 @@ impl ModalConfig {
         }
     }
 
-    pub fn get_config(&self) -> &ShaiConfig {
-        &self.config
-    }
-
     fn total_items(&self) -> usize {
         self.config.providers.len() + 1 // +1 for "Add provider" option
     }
@@ -107,11 +103,6 @@ impl ModalConfig {
             }
             _ => NavAction::None,
         }
-    }
-
-    pub fn height(&self) -> usize {
-        // 3 for border + title + help, then 1 line per provider + 1 empty line + 1 for "add provider"
-        4 + self.total_items() + 1 + 1
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {

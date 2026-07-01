@@ -14,14 +14,6 @@ impl McpManager {
     pub fn set_servers(&mut self, servers: Vec<McpServerStatus>) {
         self.servers = servers;
     }
-
-    pub fn servers(&self) -> &[McpServerStatus] {
-        &self.servers
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.servers.is_empty()
-    }
 }
 
 impl std::fmt::Display for McpManager {

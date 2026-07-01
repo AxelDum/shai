@@ -30,6 +30,7 @@ impl AgentState {
         &self.tool_tracker
     }
 
+    #[allow(dead_code)] // symmetric accessor for tool_tracker
     pub fn tool_tracker_mut(&mut self) -> &mut ToolTracker {
         &mut self.tool_tracker
     }

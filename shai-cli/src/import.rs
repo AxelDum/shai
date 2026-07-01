@@ -19,14 +19,6 @@ impl ImportSource {
     }
 }
 
-/// Result of an import operation.
-pub struct ImportResult {
-    pub source: ImportSource,
-    pub source_path: PathBuf,
-    pub agents_path: PathBuf,
-    pub content: String,
-}
-
 /// Detect and read a `CLAUDE.md` file from the given base directory.
 /// Checks `CLAUDE.md` and `.claude/CLAUDE.md`.
 fn detect_claude(base: &Path) -> Option<(PathBuf, String)> {

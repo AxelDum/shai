@@ -55,6 +55,7 @@ impl CommandEntry {
         }
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn with_output(cmd: String, output_data: &[u8], output_capacity: usize) -> Self {
         let mut entry = Self::new(cmd, output_capacity);
         for &byte in output_data {
@@ -73,6 +74,7 @@ impl CommandEntry {
         self.exit_code = Some(code);
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn set_duration(&mut self, duration_ms: u64) {
         self.duration_ms = Some(duration_ms);
     }
@@ -83,17 +85,12 @@ impl CommandEntry {
         strip_ansi_codes(&s).to_string()
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn get_output_lines(&self) -> Vec<String> {
         self.get_output_as_string()
             .lines()
             .map(|s| s.to_string())
             .collect()
-    }
-
-    pub fn get_last_output_lines(&self, n: usize) -> Vec<String> {
-        let lines = self.get_output_lines();
-        let start_idx = if lines.len() > n { lines.len() - n } else { 0 };
-        lines[start_idx..].to_vec()
     }
 
     pub fn is_success(&self) -> bool {
@@ -137,6 +134,7 @@ pub struct HistoryStats {
 }
 
 impl HistoryStats {
+    #[allow(dead_code)] // used by tests
     pub fn success_rate(&self) -> f64 {
         if self.total_commands == 0 {
             0.0

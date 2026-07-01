@@ -69,6 +69,7 @@ impl ConversationHistory {
     }
 
     /// Check if scrolled to bottom
+    #[allow(dead_code)] // used by tests
     pub fn at_bottom(&self) -> bool {
         self.scroll_offset == 0
     }

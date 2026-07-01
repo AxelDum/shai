@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{interval, sleep};
 use tui::auth::AppAuth;
-use tui::theme::{apply_gradient, logo, logo_cyan, SHAI_WHITE, SHAI_YELLOW};
+use tui::theme::{apply_gradient, logo, logo_cyan, SHAI_YELLOW};
 use tui::App;
 
 #[cfg(unix)]
@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 None => {
                     handle_main(None, None, Some(tui::app::InitialModal::AgentPicker))
-                        .await;
+                        .await?;
                 }
             }
         }
@@ -239,7 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         None,
                         Some(tui::app::InitialModal::SessionPicker),
                     )
-                    .await;
+                    .await?;
                 }
             }
         }
@@ -430,10 +430,6 @@ async fn handle_main_with_prompt(
 async fn handle_config() -> Result<(), Box<dyn std::error::Error>> {
     let mut auth = AppAuth::new();
     auth.run().await;
-    Ok(())
-}
-
-async fn ensure_config() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
@@ -674,7 +670,8 @@ fn handle_import(overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
 async fn handle_serve(
     host: String,
     port: u16,
-    agent: Option<String>,
+    // TODO: wire `--agent` to ServerConfig so the HTTP server uses it as default agent name
+    _agent: Option<String>,
     ephemeral: bool,
     max_sessions: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {

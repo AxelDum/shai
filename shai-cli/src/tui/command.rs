@@ -14,7 +14,7 @@ pub struct CommandDef {
     pub args: &'static [&'static str],
 }
 
-pub const COMMANDS: &[CommandDef] = &[
+const COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "/exit",
         description: "exit from the tui",
@@ -82,19 +82,11 @@ pub const COMMANDS: &[CommandDef] = &[
     },
 ];
 
-pub struct CommandRegistry {
-    commands: Vec<CommandDef>,
-}
+pub struct CommandRegistry;
 
 impl CommandRegistry {
-    pub fn new() -> Self {
-        Self {
-            commands: COMMANDS.to_vec(),
-        }
-    }
-
-    pub fn commands(&self) -> &[CommandDef] {
-        &self.commands
+    pub fn commands() -> &'static [CommandDef] {
+        COMMANDS
     }
 
     pub async fn dispatch(command: &str, app: &mut App<'_>) -> io::Result<()> {

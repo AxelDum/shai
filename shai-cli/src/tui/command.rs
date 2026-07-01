@@ -112,6 +112,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("fc") => {
@@ -125,6 +127,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("fc2") => {
@@ -135,6 +139,8 @@ impl CommandRegistry {
                             {
                                 app.notify("llm will now use function calling in required mode for tool calls", Duration::from_secs(3));
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("so") => {
@@ -148,6 +154,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         _ => {}

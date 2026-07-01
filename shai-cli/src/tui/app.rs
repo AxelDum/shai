@@ -283,6 +283,8 @@ impl App<'_> {
                 self.status_bar.set_git_branch(branch.trim());
             }
         }
+        self.status_bar
+            .set_tool_call_method(self.input.tool_call_method_str());
     }
 }
 

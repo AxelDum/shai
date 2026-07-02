@@ -1,11 +1,9 @@
-use ansi_to_tui::IntoText;
 use shai_llm::ToolCallMethod;
 use std::{io, time::Duration};
 
 use super::session_picker::SessionPicker;
 use super::theme::Theme;
 use crate::tui::App;
-use ratatui::widgets::Widget;
 
 #[derive(Clone)]
 pub struct CommandDef {
@@ -43,6 +41,16 @@ const COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "/restore",
         description: "restore a previous session",
+        args: &[],
+    },
+    CommandDef {
+        name: "/session",
+        description: "open the session picker",
+        args: &[],
+    },
+    CommandDef {
+        name: "/pwd",
+        description: "show current working directory",
         args: &[],
     },
     CommandDef {
@@ -197,14 +205,15 @@ impl CommandRegistry {
                 }
             }
             "/tokens" => {
+                let tc = app.agent_state.token_counter();
                 let msg = format!(
-                    "Token Usage - Input: {}, Output: {}, Cached: {}, Total: {}",
-                    app.agent_state.token_counter().input_tokens(),
-                    app.agent_state.token_counter().output_tokens(),
-                    app.agent_state.token_counter().cached_tokens(),
-                    app.agent_state.token_counter().total()
+                    "\x1b[1mToken Usage:\x1b[0m\n  \x1b[36m\u{2022}\x1b[0m Input:    {}\n  \x1b[36m\u{2022}\x1b[0m Output:   {}\n  \x1b[36m\u{2022}\x1b[0m Cached:   {}\n  \x1b[36m\u{2022}\x1b[0m Total:    {}",
+                    tc.input_tokens(),
+                    tc.output_tokens(),
+                    tc.cached_tokens(),
+                    tc.total()
                 );
-                app.notify(&msg, Duration::from_secs(5));
+                app.renderer.history_mut().add_system_text(&msg);
             }
             "/theme" => match args.into_iter().next() {
                 Some("dark") => {
@@ -304,6 +313,37 @@ impl CommandRegistry {
                     }
                 }
             }
+            "/session" => {
+                let sessions = shai_core::session::SessionPersist::list_sessions();
+                match sessions {
+                    Ok(sessions) if !sessions.is_empty() => {
+                        let palette = app.status_bar.palette();
+                        app.ui_state.session_picker =
+                            Some(SessionPicker::new(sessions, palette));
+                    }
+                    Ok(_) => {
+                        app.notify("No saved sessions found", Duration::from_secs(2));
+                    }
+                    Err(e) => {
+                        app.notify(
+                            &format!("Failed to list sessions: {}", e),
+                            Duration::from_secs(3),
+                        );
+                    }
+                }
+            }
+            "/pwd" => {
+                match std::env::current_dir() {
+                    Ok(cwd) => {
+                        app.renderer
+                            .history_mut()
+                            .add_system_text(&cwd.display().to_string());
+                    }
+                    Err(_) => {
+                        app.notify("Failed to get current directory", Duration::from_secs(3));
+                    }
+                }
+            }
             "/latest" => {
                 match shai_core::session::SessionPersist::list_sessions() {
                     Ok(sessions) if !sessions.is_empty() => {
@@ -363,15 +403,7 @@ impl CommandRegistry {
                             ));
                         }
                     }
-                    if let Some(ref mut terminal) = app.terminal {
-                        let wrapped = msg.into_text().unwrap();
-                        let line_count = wrapped.lines.len() as u16;
-                        terminal.clear()?;
-                        terminal.insert_before(line_count, |buf| {
-                            wrapped.render(buf.area, buf);
-                        })?;
-                        app.renderer.history_mut().add_text(&msg);
-                    }
+                    app.renderer.history_mut().add_system_text(&msg);
                 }
             }
             "/tools" => {
@@ -383,27 +415,16 @@ impl CommandRegistry {
                     for (name, desc) in &tools {
                         msg.push_str(&format!("  \x1b[36m\u{2022}\x1b[0m \x1b[1m{}\x1b[0m \u{2014} {}\n", name, desc));
                     }
-                    if let Some(ref mut terminal) = app.terminal {
-                        let wrapped = msg.into_text().unwrap();
-                        let line_count = wrapped.lines.len() as u16;
-                        terminal.clear()?;
-                        terminal.insert_before(line_count, |buf| {
-                            wrapped.render(buf.area, buf);
-                        })?;
-                        app.renderer.history_mut().add_text(&msg);
-                    }
+                    app.renderer.history_mut().add_system_text(&msg);
                 }
             }
             "/mcp" => {
-                let msg = format!("{}", app.agent_state.mcp_manager());
-                if let Some(ref mut terminal) = app.terminal {
-                    let wrapped = msg.into_text().unwrap();
-                    let line_count = wrapped.lines.len() as u16;
-                    terminal.clear()?;
-                    terminal.insert_before(line_count, |buf| {
-                        wrapped.render(buf.area, buf);
-                    })?;
-                    app.renderer.history_mut().add_text(&msg);
+                let mcp = app.agent_state.mcp_manager();
+                if mcp.is_empty() {
+                    app.notify("No MCP servers configured.", Duration::from_secs(3));
+                } else {
+                    let msg = format!("{}", mcp);
+                    app.renderer.history_mut().add_system_text(&msg);
                 }
             }
             "/auth" => {
@@ -425,15 +446,7 @@ impl CommandRegistry {
                 let mut auth = crate::tui::auth::auth::AppAuth::new();
                 auth.run().await;
 
-                // Re-enable raw mode (auth TUI disables it)
-                use crossterm::terminal::enable_raw_mode;
-                enable_raw_mode().ok();
-
-                // Clear terminal and recreate agent
-                if let Some(ref mut terminal) = app.terminal {
-                    let _ = terminal.clear();
-                }
-
+                // Recreate agent
                 app.start_agent(agent_name.as_deref()).await.ok();
 
                 if let Some(trace) = trace {

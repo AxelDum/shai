@@ -46,6 +46,27 @@ impl ConversationHistory {
         }
     }
 
+    /// Add a system message (e.g. command output) with a diamond marker and spacing
+    pub fn add_system_text(&mut self, text: &str) {
+        self.lines.push_back(ConversationLine {
+            text: String::new(),
+        });
+        if self.lines.len() > MAX_SCROLLBACK_LINES {
+            self.lines.pop_front();
+        }
+        for (i, line) in text.lines().enumerate() {
+            let text = if i == 0 {
+                format!("\x1b[33m\u{25C6}\x1b[0m {}", line)
+            } else {
+                line.to_string()
+            };
+            self.lines.push_back(ConversationLine { text });
+            if self.lines.len() > MAX_SCROLLBACK_LINES {
+                self.lines.pop_front();
+            }
+        }
+    }
+
     /// Scroll up by `n` lines
     pub fn scroll_up(&mut self, n: usize) {
         let max_scroll = self.lines.len().saturating_sub(self.visible_height.max(1));

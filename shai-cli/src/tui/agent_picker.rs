@@ -165,6 +165,7 @@ impl AgentPicker {
                 .borders(Borders::ALL)
                 .border_set(ratatui::symbols::border::ROUNDED)
                 .border_style(Style::default().fg(self.palette.border))
+                .bg(self.palette.background)
                 .padding(Padding::new(1, 1, 0, 0)),
         );
 

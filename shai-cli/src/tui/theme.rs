@@ -39,6 +39,7 @@ pub struct ThemePalette {
     pub cursor_bg: Color,
     #[allow(dead_code)] // TODO: reserved for future error rendering
     pub error: Color,
+    pub background: Color,
     #[allow(dead_code)] // TODO: reserved for future diff rendering
     pub diff_added: Color,
     #[allow(dead_code)] // TODO: reserved for future diff rendering
@@ -89,6 +90,7 @@ impl Theme {
                 cursor_fg: Color::White,
                 cursor_bg: Color::White,
                 error: Color::Rgb(255, 100, 100),
+                background: Color::Black,
                 diff_added: Color::Rgb(100, 255, 100),
                 diff_removed: Color::Rgb(255, 100, 100),
             },
@@ -104,6 +106,7 @@ impl Theme {
                 cursor_fg: Color::Black,
                 cursor_bg: Color::Black,
                 error: Color::Rgb(200, 0, 0),
+                background: Color::White,
                 diff_added: Color::Rgb(0, 150, 0),
                 diff_removed: Color::Rgb(200, 0, 0),
             },

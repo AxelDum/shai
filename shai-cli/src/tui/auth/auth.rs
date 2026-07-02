@@ -4,7 +4,7 @@ use super::config_model::ModalModel;
 use super::config_providers::ModalProviders;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
 use ratatui::{
     layout::Rect, prelude::CrosstermBackend, Frame, Terminal, TerminalOptions, Viewport,
@@ -51,15 +51,13 @@ impl AppAuth {
     pub async fn run(&mut self) {
         let result = self.try_run().await;
 
+        self.terminal = None;
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
-        let _ = disable_raw_mode();
 
         if let Err(e) = result {
             println!();
             eprintln!("\x1b[2m{}\x1b[0m\r\n", e);
         }
-
-        println!();
     }
 
     pub async fn try_run(&mut self) -> Result<(), Box<dyn std::error::Error>> {

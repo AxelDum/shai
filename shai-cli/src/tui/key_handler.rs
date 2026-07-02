@@ -5,6 +5,7 @@ use ansi_to_tui::IntoText;
 use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::widgets::Clear;
 
 use super::input::{AgentMode, UserAction};
 use super::session_picker::SessionPicker;
@@ -446,6 +447,7 @@ impl App<'_> {
                         width: frame.area().width.saturating_sub(4),
                         height: frame.area().height.saturating_sub(2),
                     };
+                    frame.render_widget(Clear, picker_area);
                     picker.draw(frame, picker_area);
                 }
 
@@ -456,6 +458,7 @@ impl App<'_> {
                         width: frame.area().width.saturating_sub(4),
                         height: frame.area().height.saturating_sub(2),
                     };
+                    frame.render_widget(Clear, picker_area);
                     picker.draw(frame, picker_area);
                 }
             })?;

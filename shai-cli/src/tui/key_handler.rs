@@ -2,9 +2,10 @@ use std::io;
 use std::time::Duration;
 
 use ansi_to_tui::IntoText;
-use cli_clipboard::ClipboardProvider;
+use arboard::Clipboard;
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::widgets::Clear;
 
 use super::input::{AgentMode, UserAction};
 use super::session_picker::SessionPicker;
@@ -185,8 +186,8 @@ impl App<'_> {
         if self.shortcuts.matches(&key_event, self.shortcuts.copy_response()) {
             let last_response = self.agent_state.session_manager().last_assistant_response();
             if !last_response.is_empty() {
-                if let Ok(mut ctx) = cli_clipboard::ClipboardContext::new() {
-                    let _ = ctx.set_contents(last_response.to_string());
+                if let Ok(mut ctx) = Clipboard::new() {
+                    let _ = ctx.set_text(last_response.to_string());
                     self.notify("Copied last response to clipboard", Duration::from_secs(2));
                 }
             } else {
@@ -197,7 +198,7 @@ impl App<'_> {
 
         if self.shortcuts.matches(&key_event, self.shortcuts.cycle_agent_mode()) {
             let mode = self.input.cycle_agent_mode();
-            self.status_bar.set_agent_mode(&format!("{:?}", mode));
+            self.status_bar.set_agent_mode(&mode.status_bar_str());
             if let Some(ref agent) = self.agent {
                 match mode {
                     AgentMode::Plan => {
@@ -289,7 +290,7 @@ impl App<'_> {
                     ) {
                         let _ = agent.controller.sudo().await;
                         self.input.set_agent_mode(AgentMode::Auto);
-                        self.status_bar.set_agent_mode("Auto");
+                        self.status_bar.set_agent_mode(&AgentMode::Auto.status_bar_str());
                     }
                     if let Err(_) = agent
                         .controller
@@ -446,6 +447,7 @@ impl App<'_> {
                         width: frame.area().width.saturating_sub(4),
                         height: frame.area().height.saturating_sub(2),
                     };
+                    frame.render_widget(Clear, picker_area);
                     picker.draw(frame, picker_area);
                 }
 
@@ -456,6 +458,7 @@ impl App<'_> {
                         width: frame.area().width.saturating_sub(4),
                         height: frame.area().height.saturating_sub(2),
                     };
+                    frame.render_widget(Clear, picker_area);
                     picker.draw(frame, picker_area);
                 }
             })?;

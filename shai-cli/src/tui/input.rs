@@ -85,7 +85,7 @@ impl InputArea<'_> {
         Self {
             agent_running: false,
             input: TextArea::default(),
-            placeholder: "? for shortcuts".to_string(),
+            placeholder: "? for help".to_string(),
             current_draft: None,
             animation_start: None,
             status_message: None,
@@ -175,19 +175,6 @@ impl InputArea<'_> {
         }
     }
 
-    pub fn with_placeholder(mut self, placeholder: &str) -> Self {
-        self.placeholder = placeholder.to_string();
-        self
-    }
-
-    pub fn set_status(&mut self, text: &str) {
-        self.status_message = Some(text.to_string());
-    }
-
-    pub fn is_animating(&self) -> bool {
-        self.animation_start.is_some()
-    }
-
     fn get_status_text(&self) -> String {
         if let Some(ref msg) = self.status_message {
             format!(" {}", msg)
@@ -214,13 +201,13 @@ impl InputArea<'_> {
         self.method = method;
     }
 
-    pub fn method_str(&self) -> &str {
+    pub fn tool_call_method_str(&self) -> &'static str {
         match self.method {
-            ToolCallMethod::Auto => "\u{1f6e0}\u{fe0f} tool call try all methods",
-            ToolCallMethod::FunctionCall => "\u{1f6e0}\u{fe0f} function call (auto)",
-            ToolCallMethod::FunctionCallRequired => "\u{1f6e0}\u{fe0f} function call (required)",
-            ToolCallMethod::StructuredOutput => "\u{1f6e0}\u{fe0f} structured output",
-            ToolCallMethod::Parsing => "\u{1f6e9}\u{fe0f} parsing",
+            ToolCallMethod::Auto => "",
+            ToolCallMethod::FunctionCall => "",
+            ToolCallMethod::FunctionCallRequired => "\u{1f6e0}\u{fe0f}fc2",
+            ToolCallMethod::StructuredOutput => "\u{1f6e0}\u{fe0f}so",
+            ToolCallMethod::Parsing => "\u{1f6e9}\u{fe0f}ps",
         }
     }
 }
@@ -561,7 +548,7 @@ impl InputArea<'_> {
         f.render_widget(">".to_string(), pad);
 
         // Set placeholder and block
-        self.input.set_placeholder_text("? for help");
+        self.input.set_placeholder_text(&self.placeholder);
         self.input
             .set_placeholder_style(Style::default().fg(self.palette.placeholder));
         self.input

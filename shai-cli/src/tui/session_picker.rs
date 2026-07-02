@@ -38,10 +38,6 @@ impl SessionPicker {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.sessions.is_empty()
-    }
-
     /// Handle a key event. Returns `Some(SessionPickerAction)` if the picker
     /// should close, or `None` to keep it open.
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<SessionPickerAction> {

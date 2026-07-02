@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use super::command::COMMANDS;
+use super::command::CommandRegistry;
 use shai_core::config::tui::{KeyBinding, TuiConfig};
 
 pub struct HelpArea;
@@ -27,7 +27,7 @@ impl HelpArea {
             "  Available Commands:".to_string(),
         ];
 
-        for cmd in COMMANDS.iter() {
+        for cmd in CommandRegistry::commands().iter() {
             let args_suffix = if cmd.args.is_empty() {
                 String::new()
             } else {
@@ -41,12 +41,15 @@ impl HelpArea {
 
         let config = TuiConfig::default();
         let s = &config.shortcuts;
-        let bindings: [(&str, &str); 6] = [
+        let bindings: [(&str, &str); 9] = [
             ("toggle_theme", "toggle dark/light theme"),
             ("clear_screen", "clear screen / reset viewport"),
             ("regenerate", "retry/regenerate last response"),
             ("copy_response", "copy last assistant response to clipboard"),
             ("paste", "paste from clipboard"),
+            ("expand_tool", "expand tool output in full screen"),
+            ("session_picker", "open session picker"),
+            ("prompt_picker", "open system prompt picker"),
             ("cycle_agent_mode", "cycle agent mode (Plan/Manual/Auto)"),
         ];
 
@@ -57,6 +60,9 @@ impl HelpArea {
                 "regenerate" => &s.regenerate,
                 "copy_response" => &s.copy_response,
                 "paste" => &s.paste,
+                "expand_tool" => &s.expand_tool,
+                "session_picker" => &s.session_picker,
+                "prompt_picker" => &s.prompt_picker,
                 "cycle_agent_mode" => &s.cycle_agent_mode,
                 _ => unreachable!(),
             }

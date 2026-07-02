@@ -14,7 +14,7 @@ pub struct CommandDef {
     pub args: &'static [&'static str],
 }
 
-pub const COMMANDS: &[CommandDef] = &[
+const COMMANDS: &[CommandDef] = &[
     CommandDef {
         name: "/exit",
         description: "exit from the tui",
@@ -82,19 +82,11 @@ pub const COMMANDS: &[CommandDef] = &[
     },
 ];
 
-pub struct CommandRegistry {
-    commands: Vec<CommandDef>,
-}
+pub struct CommandRegistry;
 
 impl CommandRegistry {
-    pub fn new() -> Self {
-        Self {
-            commands: COMMANDS.to_vec(),
-        }
-    }
-
-    pub fn commands(&self) -> &[CommandDef] {
-        &self.commands
+    pub fn commands() -> &'static [CommandDef] {
+        COMMANDS
     }
 
     pub async fn dispatch(command: &str, app: &mut App<'_>) -> io::Result<()> {
@@ -120,6 +112,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("fc") => {
@@ -133,6 +127,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("fc2") => {
@@ -143,6 +139,8 @@ impl CommandRegistry {
                             {
                                 app.notify("llm will now use function calling in required mode for tool calls", Duration::from_secs(3));
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         Some("so") => {
@@ -156,6 +154,8 @@ impl CommandRegistry {
                                     Duration::from_secs(3),
                                 );
                                 app.input.set_tool_call_method(method);
+                                app.status_bar
+                                    .set_tool_call_method(app.input.tool_call_method_str());
                             }
                         }
                         _ => {}

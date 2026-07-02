@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
@@ -21,8 +21,8 @@ use super::auth::NavAction;
 pub enum FetchState {
     Idle,
     Fetching,
-    Success(Vec<String>),
-    Error(String),
+    Success,
+    Error,
 }
 
 #[derive(Debug)]
@@ -57,14 +57,6 @@ impl ModalEnvs {
             fetch_state: FetchState::Idle,
             fetch_task: None,
         }
-    }
-
-    pub fn env_values(&self) -> &HashMap<String, String> {
-        &self.env_values
-    }
-
-    pub fn provider(&self) -> &ProviderInfo {
-        &self.provider
     }
 
     pub fn extract_state(
@@ -127,9 +119,9 @@ impl ModalEnvs {
 
             // Update internal state based on result
             match &result {
-                Ok(models) => self.fetch_state = FetchState::Success(models.clone()),
+                Ok(_) => self.fetch_state = FetchState::Success,
                 Err(e) => {
-                    self.fetch_state = FetchState::Error(e.clone());
+                    self.fetch_state = FetchState::Error;
                     self.error_message = Some(format!("Error: {}", e));
                 }
             }
@@ -159,11 +151,13 @@ impl ModalEnvs {
             }
             KeyCode::Tab => {
                 if !self.input_fields.is_empty() {
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                        self.current_field = (self.current_field - 1) % self.input_fields.len();
-                    } else {
-                        self.current_field = (self.current_field + 1) % self.input_fields.len();
-                    }
+                    self.current_field = (self.current_field + 1) % self.input_fields.len();
+                }
+                NavAction::None
+            }
+            KeyCode::BackTab => {
+                if !self.input_fields.is_empty() {
+                    self.current_field = (self.current_field - 1) % self.input_fields.len();
                 }
                 NavAction::None
             }
@@ -181,16 +175,6 @@ impl ModalEnvs {
                 }
                 NavAction::None
             }
-        }
-    }
-
-    pub fn height(&self) -> usize {
-        let num_fields = self.provider.env_vars.len();
-        let base_height = 3 + (num_fields * 4) + 2;
-        if self.error_message.is_some() {
-            base_height + 2
-        } else {
-            base_height
         }
     }
 

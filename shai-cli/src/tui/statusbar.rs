@@ -54,6 +54,7 @@ pub struct StatusBarInfo {
     pub location: String,
     pub git_branch: String,
     pub agent_mode: String,
+    pub tool_call_method: String,
 }
 
 pub struct StatusBar {
@@ -74,6 +75,7 @@ impl StatusBar {
                 location: String::new(),
                 git_branch: String::new(),
                 agent_mode: String::new(),
+                tool_call_method: String::new(),
             },
             theme,
             notification: None,
@@ -91,10 +93,6 @@ impl StatusBar {
 
     pub fn palette(&self) -> ThemePalette {
         self.theme.palette()
-    }
-
-    pub fn update(&mut self, info: StatusBarInfo) {
-        self.info = info;
     }
 
     pub fn set_model(&mut self, model: &str) {
@@ -120,6 +118,10 @@ impl StatusBar {
 
     pub fn set_agent_mode(&mut self, mode: &str) {
         self.info.agent_mode = mode.to_string();
+    }
+
+    pub fn set_tool_call_method(&mut self, method: &str) {
+        self.info.tool_call_method = method.to_string();
     }
 
     pub fn set_notification(&mut self, msg: &str, duration: std::time::Duration) {
@@ -164,6 +166,15 @@ impl StatusBar {
             spans.push(Span::styled(
                 format!(" {} ", self.info.agent_mode),
                 Style::default().fg(Color::Black).bg(Color::Green),
+            ));
+        }
+
+        // Tool call method (shown only when customized by user)
+        if !self.info.tool_call_method.is_empty() {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!(" {} ", self.info.tool_call_method),
+                Style::default().fg(Color::Black).bg(Color::Magenta),
             ));
         }
 

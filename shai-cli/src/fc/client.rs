@@ -44,6 +44,7 @@ impl ShaiSessionClient {
         }
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn get_all_commands(&self) -> Result<CommandHistory, Box<dyn std::error::Error>> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .map_err(|_| "Could not connect to SHAI history session (is server running?)")?;
@@ -68,6 +69,7 @@ impl ShaiSessionClient {
         }
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn clear(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .map_err(|_| "Could not connect to SHAI history session (is server running?)")?;
@@ -83,6 +85,7 @@ impl ShaiSessionClient {
         }
     }
 
+    #[allow(dead_code)] // used by tests
     pub fn get_status(&self) -> Result<HistoryStats, Box<dyn std::error::Error>> {
         let mut stream = UnixStream::connect(&self.socket_path)
             .map_err(|_| "Could not connect to SHAI history session (is server running?)")?;

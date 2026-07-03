@@ -197,7 +197,7 @@ pub struct ShortcutsConfig {
     pub regenerate: KeyBinding,
     #[serde(default = "default_ctrl_k")]
     pub copy_response: KeyBinding,
-    #[serde(default = "default_ctrl_x")]
+    #[serde(default = "default_alt_x")]
     pub expand_tool: KeyBinding,
     #[serde(default = "default_ctrl_o")]
     pub session_picker: KeyBinding,
@@ -218,7 +218,7 @@ impl Default for ShortcutsConfig {
             clear_screen: default_ctrl_l(),
             regenerate: default_ctrl_r(),
             copy_response: default_ctrl_k(),
-            expand_tool: default_ctrl_x(),
+            expand_tool: default_alt_x(),
             session_picker: default_ctrl_o(),
             prompt_picker: default_ctrl_p(),
             cycle_agent_mode: default_shift_tab(),
@@ -325,8 +325,8 @@ fn default_ctrl_r() -> KeyBinding {
 fn default_ctrl_k() -> KeyBinding {
     KeyBinding::new(KeyCode::Char('k'), KeyModifiers::CONTROL)
 }
-fn default_ctrl_x() -> KeyBinding {
-    KeyBinding::new(KeyCode::Char('x'), KeyModifiers::CONTROL)
+fn default_alt_x() -> KeyBinding {
+    KeyBinding::new(KeyCode::Char('x'), KeyModifiers::ALT)
 }
 fn default_ctrl_o() -> KeyBinding {
     KeyBinding::new(KeyCode::Char('o'), KeyModifiers::CONTROL)

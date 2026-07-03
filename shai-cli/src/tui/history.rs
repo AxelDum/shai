@@ -67,6 +67,15 @@ impl ConversationHistory {
         }
     }
 
+    /// Return all history lines as plain text with ANSI escape codes stripped
+    pub fn raw_text(&self) -> String {
+        self.lines
+            .iter()
+            .map(|l| strip_ansi(&l.text))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Scroll up by `n` lines
     pub fn scroll_up(&mut self, n: usize) {
         let max_scroll = self.lines.len().saturating_sub(self.visible_height.max(1));
@@ -161,4 +170,23 @@ impl ConversationHistory {
             f.render_widget(paragraph, area);
         }
     }
+}
+
+/// Strip ANSI escape sequences (SGR and simple CSI) from a string
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && matches!(chars.peek(), Some('[')) {
+            chars.next();
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }

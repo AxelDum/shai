@@ -41,7 +41,7 @@ impl HelpArea {
 
         let config = TuiConfig::default();
         let s = &config.shortcuts;
-        let bindings: [(&str, &str); 9] = [
+        let bindings: [(&str, &str); 10] = [
             ("toggle_theme", "toggle dark/light theme"),
             ("clear_screen", "clear screen / reset viewport"),
             ("regenerate", "retry/regenerate last response"),
@@ -51,25 +51,30 @@ impl HelpArea {
             ("session_picker", "open session picker"),
             ("prompt_picker", "open system prompt picker"),
             ("cycle_agent_mode", "cycle agent mode (Plan/Manual/Auto)"),
+            ("alt_r", "raw output for terminal selection"),
         ];
 
-        let get_binding = |field: &str| -> &KeyBinding {
+        let get_binding = |field: &str| -> Option<&KeyBinding> {
             match field {
-                "toggle_theme" => &s.toggle_theme,
-                "clear_screen" => &s.clear_screen,
-                "regenerate" => &s.regenerate,
-                "copy_response" => &s.copy_response,
-                "paste" => &s.paste,
-                "expand_tool" => &s.expand_tool,
-                "session_picker" => &s.session_picker,
-                "prompt_picker" => &s.prompt_picker,
-                "cycle_agent_mode" => &s.cycle_agent_mode,
-                _ => unreachable!(),
+                "toggle_theme" => Some(&s.toggle_theme),
+                "clear_screen" => Some(&s.clear_screen),
+                "regenerate" => Some(&s.regenerate),
+                "copy_response" => Some(&s.copy_response),
+                "paste" => Some(&s.paste),
+                "expand_tool" => Some(&s.expand_tool),
+                "session_picker" => Some(&s.session_picker),
+                "prompt_picker" => Some(&s.prompt_picker),
+                "cycle_agent_mode" => Some(&s.cycle_agent_mode),
+                _ => None,
             }
         };
 
         for (field, desc) in bindings.iter() {
-            lines.push(format!("  {:<20} {}", format_binding(get_binding(field)), desc));
+            let binding_str = match get_binding(field) {
+                Some(b) => format_binding(b),
+                None => "Alt+r".to_string(),
+            };
+            lines.push(format!("  {:<20} {}", binding_str, desc));
         }
 
         lines.join("\n")

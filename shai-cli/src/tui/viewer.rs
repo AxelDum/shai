@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 use ratatui::prelude::CrosstermBackend;
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation, Wrap};
 use ratatui::Frame as RataFrame;
 use ratatui::Terminal;
 use shai_core::tools::highlight::highlight_content;
@@ -78,7 +78,9 @@ impl AlternateScreenViewer {
             0
         };
 
-        let paragraph = Paragraph::new(text).scroll((clamped_offset as u16, 0));
+        let paragraph = Paragraph::new(text)
+            .wrap(Wrap { trim: false })
+            .scroll((clamped_offset as u16, 0));
         frame.render_widget(paragraph, inner);
 
         if total_lines > visible_height {

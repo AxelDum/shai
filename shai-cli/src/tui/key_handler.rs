@@ -236,6 +236,21 @@ impl App<'_> {
             return Ok(());
         }
 
+        if key_event.code == KeyCode::Char('r')
+            && key_event.modifiers.contains(crossterm::event::KeyModifiers::ALT)
+        {
+            let raw_text = self.renderer.history_mut().raw_text();
+            if raw_text.trim().is_empty() {
+                self.notify("No history to display", Duration::from_secs(2));
+                return Ok(());
+            }
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
+            let mut viewer = AlternateScreenViewer::new(raw_text, None);
+            let _ = viewer.run().await;
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture);
+            return Ok(());
+        }
+
         if self.shortcuts.matches(&key_event, self.shortcuts.session_picker()) {
             let sessions = shai_core::session::SessionPersist::list_sessions().unwrap_or_default();
             self.ui_state.session_picker =

@@ -178,15 +178,9 @@ impl Brain for CoderBrain {
             let input = usage.prompt_tokens.unwrap_or(0);
             let output = usage.completion_tokens.unwrap_or(0);
             let cached = usage
-                .input_tokens_details
+                .prompt_tokens_details
                 .as_ref()
                 .map(|d| d.cached_tokens)
-                .or_else(|| {
-                    usage
-                        .prompt_tokens_details
-                        .as_ref()
-                        .map(|d| d.cached_tokens)
-                })
                 .unwrap_or(0);
             (input, output, cached)
         });

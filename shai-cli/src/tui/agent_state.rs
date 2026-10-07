@@ -164,6 +164,7 @@ mod tests {
                 tool_calls: None,
                 name: None,
                 audio: None,
+                reasoning: None,
                 reasoning_content: None,
                 refusal: None,
             }),

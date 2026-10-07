@@ -37,7 +37,7 @@ impl SearcherBrain {
             .messages(messages)
             .tools(tools.iter().map(|t| t.to_openai()).collect::<Vec<_>>())
             .tool_choice(tool_choice)
-            .temperature(0.1)
+            .temperature(0.1f32)
             .build()
             .map_err(|e| AgentError::LlmError(e.to_string()))?;
 

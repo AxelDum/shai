@@ -51,7 +51,7 @@ mod llm_integration_tests {
             .messages(messages)
             .tools(vec![tool.to_openai()])
             .tool_choice(ChatCompletionToolChoice::Auto) // Force tool usage
-            .temperature(0.1)
+            .temperature(0.1f32)
             .build()
             .map_err(|e| format!("Failed to build request: {}", e))?;
 

@@ -29,7 +29,7 @@ pub async fn clifix(
     let request = ChatCompletionParametersBuilder::default()
         .model(model.clone())
         .messages(messages)
-        .temperature(0.1)
+        .temperature(0.1f32)
         .response_format(ChatCompletionResponseFormat::JsonSchema {
             json_schema: JsonSchemaBuilder::default()
                 .name("cli_fix_response")

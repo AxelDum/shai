@@ -27,7 +27,7 @@ pub async fn gerund(
     let request = ChatCompletionParametersBuilder::default()
         .model(model.clone())
         .messages(messages)
-        .temperature(0.1)
+        .temperature(0.1f32)
         .build()?;
 
     // submit it to our big brain coder

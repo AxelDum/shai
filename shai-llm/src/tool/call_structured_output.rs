@@ -157,7 +157,7 @@ impl ToolCallStructuredOutput for LlmClient {
         let request = ChatCompletionParametersBuilder::default()
             .model(&request.model)
             .messages(request.messages)
-            .temperature(0.3)
+            .temperature(0.3f32)
             .with_structured_output(tools)
             .build()
             .map_err(|e| LlmError::from(e.to_string()))?;

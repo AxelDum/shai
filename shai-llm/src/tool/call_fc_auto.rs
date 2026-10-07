@@ -55,7 +55,7 @@ impl ToolCallFunctionCallingAuto for LlmClient {
             .model(&request.model)
             .messages(request.messages.clone())
             .with_function_calling_auto(tools)
-            .temperature(0.3)
+            .temperature(0.3f32)
             .build()
             .map_err(|e| LlmError::from(e.to_string()))?;
 

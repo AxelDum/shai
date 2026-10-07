@@ -63,7 +63,7 @@ pub async fn test_provider_function_calling_boolean_params(provider: Box<dyn Llm
             },
         }])
         .tool_choice(ChatCompletionToolChoice::Auto)
-        .temperature(0.1)
+        .temperature(0.1f32)
         .max_completion_tokens(200u32)
         .build()
         .expect("Failed to build ChatCompletionParameters");
@@ -196,7 +196,7 @@ pub async fn test_provider_chat_completion(provider: Box<dyn LlmProvider>) {
             content: ChatMessageContent::Text("Say 'test successful' exactly".to_string()),
             name: None,
         }])
-        .temperature(0.1)
+        .temperature(0.1f32)
         .max_completion_tokens(10u32)
         .build()
         .expect("Failed to build ChatCompletionParameters");
@@ -246,7 +246,7 @@ pub async fn test_provider_chat_stream(provider: Box<dyn LlmProvider>) {
             content: ChatMessageContent::Text("Count from 1 to 3".to_string()),
             name: None,
         }])
-        .temperature(0.1)
+        .temperature(0.1f32)
         .max_completion_tokens(20u32)
         .stream(true)
         .build()
@@ -490,7 +490,7 @@ mod integration_tests {
                         }),
                     },
                 }])
-                .temperature(0.1)
+                .temperature(0.1f32)
                 .max_completion_tokens(100u32)
                 .build()
                 .expect("Failed to build ChatCompletionParameters");
@@ -624,7 +624,7 @@ mod integration_tests {
                         },
                     }
                 ])
-                .temperature(0.1)
+                .temperature(0.1f32)
                 .max_completion_tokens(200u32)
                 .build()
                 .expect("Failed to build ChatCompletionParameters");

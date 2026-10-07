@@ -71,7 +71,7 @@ async fn main() -> Result<(), LlmError> {
                 }),
             },
         }])
-        .temperature(0.1)
+        .temperature(0.1f32)
         .max_completion_tokens(200u32)
         .build()
         .map_err(|e| format!("Failed to build parameters: {:?}", e))?;
@@ -136,7 +136,7 @@ async fn main() -> Result<(), LlmError> {
                             tool_call_id: tool_call.id.clone(),
                         }
                     ])
-                    .temperature(0.1)
+                    .temperature(0.1f32)
                     .max_completion_tokens(200u32)
                     .build()
                     .map_err(|e| format!("Failed to build follow-up parameters: {:?}", e))?;

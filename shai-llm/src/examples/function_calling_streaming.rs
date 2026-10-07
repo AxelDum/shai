@@ -78,7 +78,7 @@ async fn main() -> Result<(), LlmError> {
                 }),
             },
         }])
-        .temperature(0.1)
+        .temperature(0.1f32)
         .max_completion_tokens(200u32)
         .stream(true) // Enable streaming!
         .build()

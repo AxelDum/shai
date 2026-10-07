@@ -99,7 +99,7 @@ mod structured_output_integration_tests {
                 name: None,
             }])
             .with_structured_output(&tools)
-            .temperature(0.1)
+            .temperature(0.1f32)
             .max_completion_tokens(200u32)
             .build()
             .unwrap();
@@ -147,7 +147,7 @@ mod structured_output_integration_tests {
                 }
             ])
             .with_structured_output(&tools)
-            .temperature(0.1)
+            .temperature(0.1f32)
             .max_completion_tokens(500u32)
             .build()
             .unwrap();

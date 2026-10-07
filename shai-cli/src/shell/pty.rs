@@ -224,7 +224,7 @@ impl ShaiPtyManager {
 
             libc::setsid();
 
-            if libc::ioctl(self.slave_fd, libc::TIOCSCTTY, 0) == -1 {
+            if libc::ioctl(self.slave_fd, libc::TIOCSCTTY as _, 0) == -1 {
                 libc::exit(1);
             }
 

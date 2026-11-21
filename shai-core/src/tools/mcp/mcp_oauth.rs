@@ -40,6 +40,7 @@ pub(crate) async fn authorize(
     mut manager: AuthorizationManager,
     challenge: Option<String>,
     open_browser: BrowserOpener,
+    discovery_timeout: Duration,
 ) -> anyhow::Result<AuthorizationManager> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -47,10 +48,13 @@ pub(crate) async fn authorize(
     let callback_address = listener.local_addr()?;
     let redirect_uri = format!("http://{callback_address}/callback");
 
-    let resolution = manager
-        .resolve_metadata_from_challenge(challenge.as_deref())
-        .await
-        .context("OAuth metadata discovery failed")?;
+    let resolution = tokio::time::timeout(
+        discovery_timeout,
+        manager.resolve_metadata_from_challenge(challenge.as_deref()),
+    )
+    .await
+    .context("OAuth metadata discovery timed out")?
+    .context("OAuth metadata discovery failed")?;
     if resolution.source == AuthorizationMetadataSource::LegacyEndpointFallback {
         bail!("the MCP server did not publish OAuth metadata");
     }
@@ -60,10 +64,14 @@ pub(crate) async fn authorize(
     if let Some(challenge) = challenge {
         request = request.with_challenge(challenge);
     }
-    let session = AuthorizationSession::new(manager, request)
-        .await
-        .map_err(|(_, error)| error)
-        .context("failed to initialize OAuth authorization")?;
+    let session = tokio::time::timeout(
+        discovery_timeout,
+        AuthorizationSession::new(manager, request),
+    )
+    .await
+    .context("OAuth client registration timed out")?
+    .map_err(|(_, error)| error)
+    .context("failed to initialize OAuth authorization")?;
     let authorization_url = session.get_authorization_url().to_string();
     let expected_state = reqwest::Url::parse(&authorization_url)
         .context("invalid OAuth authorization URL")?

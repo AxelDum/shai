@@ -655,6 +655,86 @@ mod tests {
         discovery.assert_async().await;
     }
 
+    /// Accepts TCP connections and never answers.
+    async fn unresponsive_server() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                connections.push(stream);
+            }
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[tokio::test]
+    async fn http_connect_to_unresponsive_server_times_out() {
+        let (url, server) = unresponsive_server().await;
+        let mut client = HttpClient::with_credential_store(
+            format!("{url}/mcp"),
+            None,
+            McpCredentialStore::in_memory(),
+        )
+        .with_connect_timeout(Duration::from_millis(300))
+        .with_browser_opener(|_| panic!("an unresponsive server should not start a browser flow"));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("connect to an unresponsive server hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sse_connect_to_unresponsive_server_times_out() {
+        let (url, server) = unresponsive_server().await;
+        let mut client =
+            SseClient::new(format!("{url}/sse")).with_connect_timeout(Duration::from_millis(300));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("connect to an unresponsive server hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sse_endpoint_discovery_times_out_and_closes_the_stream() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        // Opens the SSE stream but only ever sends keepalive comments
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            loop {
+                if stream.write_all(b"d\r\n: keepalive\n\n\r\n").await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        });
+        let mut client = SseClient::new(format!("http://{address}/sse"))
+            .with_connect_timeout(Duration::from_millis(300));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("SSE endpoint discovery hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("the SSE stream was left open after the timeout")
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn test_mcp_http_integration() {
         // Skip test if no MCP server is running on localhost:8000

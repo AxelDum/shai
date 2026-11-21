@@ -20,6 +20,9 @@ use super::{
 };
 use crate::tools::{ToolCall, ToolResult};
 
+/// Upper bound for reaching the MCP server before any browser interaction.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Marks a bearer token migrated from the agent config into the credential store.
 const LEGACY_TOKEN_CLIENT_ID: &str = "shai-legacy-token";
 
@@ -28,6 +31,7 @@ pub struct HttpClient {
     legacy_token: Option<OAuthToken>,
     credential_store: McpCredentialStore,
     open_browser: BrowserOpener,
+    connect_timeout: std::time::Duration,
     service: Option<RunningService<RoleClient, ClientConfig>>,
 }
 
@@ -54,6 +58,7 @@ impl HttpClient {
             legacy_token,
             credential_store,
             open_browser: default_browser_opener(),
+            connect_timeout: CONNECT_TIMEOUT,
             service: None,
         }
     }
@@ -64,6 +69,12 @@ impl HttpClient {
         F: Fn(&str) + Send + Sync + 'static,
     {
         self.open_browser = Arc::new(opener);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_connect_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
@@ -166,6 +177,18 @@ impl HttpClient {
     }
 }
 
+/// Bounds a step that talks to the MCP or authorization server, so an
+/// unresponsive peer cannot hang agent startup.
+async fn bounded<T>(
+    timeout: std::time::Duration,
+    stage: &str,
+    future: impl std::future::Future<Output = T>,
+) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
+    tokio::time::timeout(timeout, future)
+        .await
+        .map_err(|_| format!("MCP server timed out after {timeout:?} {stage}").into())
+}
+
 #[async_trait]
 impl McpClient for HttpClient {
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -173,11 +196,19 @@ impl McpClient for HttpClient {
             return Ok(());
         }
 
+        let timeout = self.connect_timeout;
         let migrated_token = self.load_migrated_token().await?;
         let migrated = migrated_token.is_some();
         let mut manager = self.manager().await?;
-        let challenge = if !migrated && manager.initialize_from_store().await? {
-            match self.connect_authorized(manager).await {
+        let challenge = if !migrated
+            && bounded(
+                timeout,
+                "during OAuth discovery",
+                manager.initialize_from_store(),
+            )
+            .await??
+        {
+            match bounded(timeout, "connecting", self.connect_authorized(manager)).await? {
                 Ok(()) => return Ok(()),
                 Err(error) if error.is_authorization_required() => {
                     error.auth_challenge().map(str::to_owned)
@@ -188,7 +219,7 @@ impl McpClient for HttpClient {
             if self.legacy_token.is_none() {
                 self.legacy_token = migrated_token;
             }
-            match self.connect_legacy().await {
+            match bounded(timeout, "connecting", self.connect_legacy()).await? {
                 Ok(()) => {
                     if !migrated {
                         if let Err(error) = self.migrate_legacy_token().await {
@@ -205,8 +236,8 @@ impl McpClient for HttpClient {
         };
 
         let manager = self.manager().await?;
-        let manager = authorize(manager, challenge, self.open_browser.clone()).await?;
-        self.connect_authorized(manager).await?;
+        let manager = authorize(manager, challenge, self.open_browser.clone(), timeout).await?;
+        bounded(timeout, "connecting", self.connect_authorized(manager)).await??;
         Ok(())
     }
 

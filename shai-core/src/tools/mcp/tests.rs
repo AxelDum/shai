@@ -458,6 +458,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oauth_callback_ignores_requests_with_wrong_state() {
+        let mut server = mockito::Server::new_async().await;
+        let resource = format!("{}/mcp", server.url());
+        let _unauthorized = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", Matcher::Missing)
+            .with_status(401)
+            .with_header("www-authenticate", &challenge(&server))
+            .create_async()
+            .await;
+        let _authorized = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", "Bearer first-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(initialize_response())
+            .create_async()
+            .await;
+        let _resource_metadata = server
+            .mock("GET", "/.well-known/oauth-protected-resource")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(protected_resource_metadata(&server, Some(resource.clone())))
+            .create_async()
+            .await;
+        let _authorization_metadata = server
+            .mock("GET", "/.well-known/oauth-authorization-server")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(authorization_metadata(&server))
+            .create_async()
+            .await;
+        let _registration = server
+            .mock("POST", "/register")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "client_id": "shai-test-client",
+                    "client_name": "Shai MCP Client",
+                    "redirect_uris": ["http://127.0.0.1/callback"]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let authorization_exchange = server
+            .mock("POST", "/token")
+            .match_body(Matcher::UrlEncoded("code".into(), "test-code".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(token_response("first-token", "first-refresh-token"))
+            .create_async()
+            .await;
+
+        let (authorization_sender, mut authorization_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<String>();
+        let mut client = HttpClient::with_credential_store(
+            resource.clone(),
+            None,
+            McpCredentialStore::in_memory(),
+        )
+        .with_browser_opener(move |url| {
+            authorization_sender.send(url.to_string()).unwrap();
+        });
+        let connection = tokio::spawn(async move { client.connect().await });
+        let auth_url = tokio::time::timeout(Duration::from_secs(10), authorization_receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let parameters: std::collections::HashMap<_, _> = reqwest::Url::parse(&auth_url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect();
+        let redirect_uri = &parameters["redirect_uri"];
+
+        for stray in [
+            format!("{redirect_uri}?code=poisoned&state=wrong-state"),
+            format!("{redirect_uri}?error=access_denied&state=wrong-state"),
+            format!("{redirect_uri}?code=poisoned"),
+            format!("{redirect_uri}?state={}", parameters["state"]),
+        ] {
+            let response = reqwest::get(stray).await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        }
+        assert!(!connection.is_finished());
+
+        callback(auth_url, &resource).await;
+        tokio::time::timeout(Duration::from_secs(15), connection)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        authorization_exchange.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_mcp_config_factory() {
         // Test stdio config
         let stdio_config = McpConfig::Stdio {
@@ -503,6 +601,138 @@ mod tests {
         );
         client.connect().await.unwrap();
         connection.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn legacy_bearer_token_is_migrated_into_credential_store() {
+        let mut server = mockito::Server::new_async().await;
+        let connection = server
+            .mock("POST", "/mcp")
+            .expect(4)
+            .match_header("authorization", "Bearer legacy-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(initialize_response())
+            .create_async()
+            .await;
+        let discovery = server
+            .mock("GET", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        let directory = tempfile::TempDir::new().unwrap();
+        let store = McpCredentialStore::from_path(directory.path().join("oauth.json"));
+        let legacy_token = crate::tools::mcp::OAuthToken {
+            access_token: "legacy-token".to_string(),
+            expires_at: None,
+        };
+        let mut client = HttpClient::with_credential_store(
+            format!("{}/mcp", server.url()),
+            Some(legacy_token),
+            store.clone(),
+        );
+        client.connect().await.unwrap();
+
+        let stored = store
+            .load()
+            .await
+            .unwrap()
+            .expect("legacy token was not migrated");
+        assert_eq!(
+            serde_json::to_value(stored.token_response.unwrap()).unwrap()["access_token"],
+            "legacy-token"
+        );
+
+        // The migrated token is used once the legacy field is gone from the agent config
+        let mut reconnected =
+            HttpClient::with_credential_store(format!("{}/mcp", server.url()), None, store)
+                .with_browser_opener(|_| panic!("migrated token should not start a browser flow"));
+        tokio::time::timeout(Duration::from_secs(15), reconnected.connect())
+            .await
+            .unwrap()
+            .unwrap();
+        connection.assert_async().await;
+        discovery.assert_async().await;
+    }
+
+    /// Accepts TCP connections and never answers.
+    async fn unresponsive_server() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                connections.push(stream);
+            }
+        });
+        (format!("http://{address}"), server)
+    }
+
+    #[tokio::test]
+    async fn http_connect_to_unresponsive_server_times_out() {
+        let (url, server) = unresponsive_server().await;
+        let mut client = HttpClient::with_credential_store(
+            format!("{url}/mcp"),
+            None,
+            McpCredentialStore::in_memory(),
+        )
+        .with_connect_timeout(Duration::from_millis(300))
+        .with_browser_opener(|_| panic!("an unresponsive server should not start a browser flow"));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("connect to an unresponsive server hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sse_connect_to_unresponsive_server_times_out() {
+        let (url, server) = unresponsive_server().await;
+        let mut client =
+            SseClient::new(format!("{url}/sse")).with_connect_timeout(Duration::from_millis(300));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("connect to an unresponsive server hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn sse_endpoint_discovery_times_out_and_closes_the_stream() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        // Opens the SSE stream but only ever sends keepalive comments
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            loop {
+                if stream.write_all(b"d\r\n: keepalive\n\n\r\n").await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        });
+        let mut client = SseClient::new(format!("http://{address}/sse"))
+            .with_connect_timeout(Duration::from_millis(300));
+        let error = tokio::time::timeout(Duration::from_secs(10), client.connect())
+            .await
+            .expect("SSE endpoint discovery hung")
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("the SSE stream was left open after the timeout")
+            .unwrap();
     }
 
     #[tokio::test]

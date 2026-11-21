@@ -7,20 +7,34 @@ use rmcp::{
     RoleClient,
 };
 use std::future::Future;
-use tokio::{io::AsyncBufReadExt, sync::mpsc, task::JoinHandle};
+use tokio::{io::AsyncBufReadExt, sync::mpsc, task::JoinHandle, time::Duration};
 use tokio_util::io::StreamReader;
 
 use super::mcp::{call_tool_params, content_to_string, McpClient, McpToolDescription};
 use crate::tools::{ToolCall, ToolResult};
 
+/// Upper bound for opening the SSE stream and receiving its `endpoint` event.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub struct SseClient {
     url: String,
+    connect_timeout: Duration,
     service: Option<RunningService<RoleClient, ClientConfig>>,
 }
 
 impl SseClient {
     pub fn new(url: String) -> Self {
-        Self { url, service: None }
+        Self {
+            url,
+            connect_timeout: CONNECT_TIMEOUT,
+            service: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
+        self
     }
 }
 
@@ -32,7 +46,7 @@ impl McpClient for SseClient {
             return Ok(());
         }
 
-        let transport = LegacySseTransport::start(&self.url).await?;
+        let transport = LegacySseTransport::start(&self.url, self.connect_timeout).await?;
         let service = ClientConfig::default().serve(transport).await?;
         self.service = Some(service);
         Ok(())
@@ -84,12 +98,21 @@ struct LegacySseTransport {
 }
 
 impl LegacySseTransport {
-    async fn start(url: &str) -> std::io::Result<Self> {
-        let response = reqwest::Client::new()
+    async fn start(url: &str, timeout: Duration) -> std::io::Result<Self> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let timed_out = |stage: &str| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("timed out after {timeout:?} {stage}"),
+            )
+        };
+        let request = reqwest::Client::new()
             .get(url)
             .header(reqwest::header::ACCEPT, "text/event-stream")
-            .send()
+            .send();
+        let response = tokio::time::timeout_at(deadline, request)
             .await
+            .map_err(|_| timed_out("connecting to the SSE endpoint"))?
             .map_err(std::io::Error::other)?
             .error_for_status()
             .map_err(std::io::Error::other)?;
@@ -101,9 +124,19 @@ impl LegacySseTransport {
                 tracing::debug!(%error, "legacy MCP SSE stream ended");
             }
         });
-        let message_endpoint = endpoint_rx
-            .await
-            .map_err(|_| std::io::Error::other("SSE stream ended before endpoint event"))?;
+        let message_endpoint = match tokio::time::timeout_at(deadline, endpoint_rx).await {
+            Ok(Ok(endpoint)) => endpoint,
+            Ok(Err(_)) => {
+                reader_task.abort();
+                return Err(std::io::Error::other(
+                    "SSE stream ended before endpoint event",
+                ));
+            }
+            Err(_) => {
+                reader_task.abort();
+                return Err(timed_out("waiting for the SSE endpoint event"));
+            }
+        };
         Ok(Self {
             http: reqwest::Client::new(),
             message_endpoint,

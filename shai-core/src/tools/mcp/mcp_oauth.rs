@@ -5,7 +5,7 @@ use rmcp::transport::auth::{
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use tokio::{net::TcpListener, sync::oneshot, time::Duration};
-use warp::Filter;
+use warp::{http::StatusCode, Filter};
 
 pub(crate) type BrowserOpener = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -16,6 +16,16 @@ struct CallbackParams {
     iss: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
+}
+
+impl CallbackParams {
+    /// A callback is only accepted when it carries the state of the pending
+    /// authorization request and either an authorization code or an error.
+    fn matches(&self, expected_state: &str) -> bool {
+        let present = |value: &Option<String>| value.as_deref().is_some_and(|v| !v.is_empty());
+        self.state.as_deref() == Some(expected_state)
+            && (present(&self.code) || present(&self.error))
+    }
 }
 
 pub(crate) fn default_browser_opener() -> BrowserOpener {
@@ -30,18 +40,21 @@ pub(crate) async fn authorize(
     mut manager: AuthorizationManager,
     challenge: Option<String>,
     open_browser: BrowserOpener,
+    discovery_timeout: Duration,
 ) -> anyhow::Result<AuthorizationManager> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .context("failed to bind OAuth callback listener")?;
     let callback_address = listener.local_addr()?;
-    drop(listener);
     let redirect_uri = format!("http://{callback_address}/callback");
 
-    let resolution = manager
-        .resolve_metadata_from_challenge(challenge.as_deref())
-        .await
-        .context("OAuth metadata discovery failed")?;
+    let resolution = tokio::time::timeout(
+        discovery_timeout,
+        manager.resolve_metadata_from_challenge(challenge.as_deref()),
+    )
+    .await
+    .context("OAuth metadata discovery timed out")?
+    .context("OAuth metadata discovery failed")?;
     if resolution.source == AuthorizationMetadataSource::LegacyEndpointFallback {
         bail!("the MCP server did not publish OAuth metadata");
     }
@@ -51,10 +64,21 @@ pub(crate) async fn authorize(
     if let Some(challenge) = challenge {
         request = request.with_challenge(challenge);
     }
-    let session = AuthorizationSession::new(manager, request)
-        .await
-        .map_err(|(_, error)| error)
-        .context("failed to initialize OAuth authorization")?;
+    let session = tokio::time::timeout(
+        discovery_timeout,
+        AuthorizationSession::new(manager, request),
+    )
+    .await
+    .context("OAuth client registration timed out")?
+    .map_err(|(_, error)| error)
+    .context("failed to initialize OAuth authorization")?;
+    let authorization_url = session.get_authorization_url().to_string();
+    let expected_state = reqwest::Url::parse(&authorization_url)
+        .context("invalid OAuth authorization URL")?
+        .query_pairs()
+        .find(|(name, _)| name == "state")
+        .map(|(_, value)| value.into_owned())
+        .context("OAuth authorization URL did not include a state parameter")?;
 
     let (callback_sender, callback_receiver) = oneshot::channel::<CallbackParams>();
     let callback_sender = Arc::new(Mutex::new(Some(callback_sender)));
@@ -67,24 +91,33 @@ pub(crate) async fn authorize(
         .and(warp::query::<CallbackParams>())
         .and(callback_filter)
         .map(
-            |params: CallbackParams,
-             sender: Arc<Mutex<Option<oneshot::Sender<CallbackParams>>>>| {
+            move |params: CallbackParams,
+                  sender: Arc<Mutex<Option<oneshot::Sender<CallbackParams>>>>| {
+                // Ignore stray requests so they cannot consume the pending callback
+                if !params.matches(&expected_state) {
+                    return warp::reply::with_status(
+                        warp::reply::html("Invalid authorization callback.".to_string()),
+                        StatusCode::BAD_REQUEST,
+                    );
+                }
                 if let Some(sender) = sender.lock().unwrap().take() {
                     let _ = sender.send(params);
                 }
-                warp::reply::html("Authorization received. You can close this tab.".to_string())
+                warp::reply::with_status(
+                    warp::reply::html(
+                        "Authorization received. You can close this tab.".to_string(),
+                    ),
+                    StatusCode::OK,
+                )
             },
         );
     let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
-    let server = warp::serve(routes)
-        .bind(callback_address)
-        .await
-        .graceful(async move {
-            let _ = shutdown_receiver.await;
-        });
+    let server = warp::serve(routes).incoming(listener).graceful(async move {
+        let _ = shutdown_receiver.await;
+    });
     let server_handle = tokio::spawn(server.run());
 
-    open_browser(session.get_authorization_url());
+    open_browser(&authorization_url);
     let callback = match tokio::time::timeout(Duration::from_secs(300), callback_receiver).await {
         Ok(Ok(callback)) => callback,
         Ok(Err(_)) => {

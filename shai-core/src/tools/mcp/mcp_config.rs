@@ -6,9 +6,10 @@ use rmcp::transport::auth::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock, Weak},
 };
 
 use super::{HttpClient, SseClient, StdioClient};
@@ -95,6 +96,50 @@ impl McpCredentialStore {
         }
     }
 
+    /// Delete stored credentials of this agent's MCP servers that are not listed.
+    pub fn retain_agent<'a>(
+        agent_name: &str,
+        mcp_names: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Self::retain_in(&Self::agent_directory(agent_name)?, mcp_names)
+    }
+
+    fn retain_in<'a>(
+        directory: &Path,
+        mcp_names: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let kept: std::collections::HashSet<String> =
+            mcp_names.into_iter().map(Self::hash).collect();
+        let entries = match std::fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        for entry in entries {
+            let path = entry?.path();
+            let Some(hash) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| {
+                    name.strip_suffix(".json")
+                        .or_else(|| name.strip_suffix(".lock"))
+                })
+            else {
+                continue;
+            };
+            let is_credential_file =
+                hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit());
+            if is_credential_file && !kept.contains(hash) {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn for_agent_path(
         agent_name: &str,
         mcp_name: &str,
@@ -124,10 +169,68 @@ impl McpCredentialStore {
     }
 
     fn from_backend(backend: McpCredentialBackend) -> Self {
+        let refresh_guard = match &backend {
+            McpCredentialBackend::File(path) => Self::shared_refresh_guard(path),
+            McpCredentialBackend::Memory(_) => Arc::new(tokio::sync::Mutex::new(())),
+        };
         Self {
             backend,
-            refresh_guard: Arc::new(tokio::sync::Mutex::new(())),
+            refresh_guard,
         }
+    }
+
+    /// Stores for the same credential file share one refresh guard, so
+    /// sessions in this process don't refresh the same token concurrently.
+    fn shared_refresh_guard(path: &Path) -> Arc<tokio::sync::Mutex<()>> {
+        type Guards = std::sync::Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>;
+        static GUARDS: LazyLock<Guards> = LazyLock::new(Default::default);
+        let mut guards = GUARDS.lock().unwrap();
+        guards.retain(|_, guard| guard.strong_count() > 0);
+        if let Some(guard) = guards.get(path).and_then(Weak::upgrade) {
+            return guard;
+        }
+        let guard = Arc::new(tokio::sync::Mutex::new(()));
+        guards.insert(path.to_path_buf(), Arc::downgrade(&guard));
+        guard
+    }
+
+    /// Locks `{hash}.lock` next to the credential file, so other processes
+    /// don't refresh the same token concurrently.
+    async fn lock_file(path: &Path) -> Result<std::fs::File, AuthError> {
+        let lock_path = path.with_extension("lock");
+        tokio::task::spawn_blocking(move || {
+            let lock = || -> std::io::Result<std::fs::File> {
+                if let Some(directory) = lock_path.parent() {
+                    let mut builder = std::fs::DirBuilder::new();
+                    builder.recursive(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::DirBuilderExt;
+                        builder.mode(0o700);
+                    }
+                    builder.create(directory)?;
+                }
+                let mut options = std::fs::OpenOptions::new();
+                options.create(true).truncate(false).write(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                let file = options.open(&lock_path)?;
+                file.lock()?;
+                Ok(file)
+            };
+            lock().map_err(|error| {
+                AuthError::CredentialStoreError(format!(
+                    "failed to lock OAuth credentials at {}: {}",
+                    lock_path.display(),
+                    error
+                ))
+            })
+        })
+        .await
+        .map_err(|error| AuthError::CredentialStoreError(error.to_string()))?
     }
 
     fn hash(value: &str) -> String {
@@ -263,14 +366,25 @@ impl CredentialStore for McpCredentialStore {
 
     async fn on_refresh_token_rejected(
         &self,
-        _credentials: &StoredCredentials,
+        credentials: &StoredCredentials,
     ) -> Result<(), AuthError> {
-        self.clear().await
+        // Keep credentials that another session has already replaced
+        let token = |credentials: &StoredCredentials| {
+            serde_json::to_value(&credentials.token_response).ok()
+        };
+        match self.load().await? {
+            Some(stored) if token(&stored) == token(credentials) => self.clear().await,
+            _ => Ok(()),
+        }
     }
 
     async fn acquire_refresh_guard(&self) -> Result<Option<CredentialRefreshGuard>, AuthError> {
         let guard = self.refresh_guard.clone().lock_owned().await;
-        Ok(Some(CredentialRefreshGuard::new(guard)))
+        let lock_file = match &self.backend {
+            McpCredentialBackend::File(path) => Some(Self::lock_file(path).await?),
+            McpCredentialBackend::Memory(_) => None,
+        };
+        Ok(Some(CredentialRefreshGuard::new((guard, lock_file))))
     }
 }
 
@@ -374,6 +488,91 @@ mod credential_tests {
         store.save(credentials.clone()).await.unwrap();
         store.on_refresh_token_rejected(&credentials).await.unwrap();
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn rejected_refresh_keeps_rotated_credentials() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("oauth.json");
+        let store = McpCredentialStore::from_path(path.clone());
+        let rejected = credentials("access", "refresh");
+        store.save(rejected.clone()).await.unwrap();
+        // Another session refreshes and saves a rotated token first
+        McpCredentialStore::from_path(path)
+            .save(credentials("access-2", "refresh-2"))
+            .await
+            .unwrap();
+
+        store.on_refresh_token_rejected(&rejected).await.unwrap();
+
+        let kept = store
+            .load()
+            .await
+            .unwrap()
+            .expect("rotated credentials were cleared");
+        assert_eq!(
+            serde_json::to_value(kept.token_response.unwrap()).unwrap()["refresh_token"],
+            "refresh-2"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_guard_is_shared_by_credential_file() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = directory.path().join("oauth.json");
+        let first = McpCredentialStore::from_path(path.clone());
+        let second = McpCredentialStore::from_path(path.clone());
+
+        let guard = first.acquire_refresh_guard().await.unwrap();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                second.acquire_refresh_guard()
+            )
+            .await
+            .is_err(),
+            "two stores for the same file refreshed concurrently"
+        );
+        // Other processes are excluded through the lock file
+        let lock_file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(path.with_extension("lock"))
+            .expect("no lock file while refreshing");
+        assert!(lock_file.try_lock().is_err());
+
+        drop(guard);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            second.acquire_refresh_guard(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn removed_mcp_credentials_are_deleted() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = |name: &str| {
+            directory
+                .path()
+                .join(format!("{}.json", McpCredentialStore::hash(name)))
+        };
+        for name in ["kept", "removed"] {
+            McpCredentialStore::from_path(path(name))
+                .save(credentials("access", "refresh"))
+                .await
+                .unwrap();
+        }
+        std::fs::write(directory.path().join("unrelated.json"), "{}").unwrap();
+        std::fs::write(path("removed").with_extension("lock"), "").unwrap();
+
+        McpCredentialStore::retain_in(directory.path(), ["kept"]).unwrap();
+
+        assert!(path("kept").exists());
+        assert!(!path("removed").exists());
+        assert!(!path("removed").with_extension("lock").exists());
+        assert!(directory.path().join("unrelated.json").exists());
     }
 
     #[test]

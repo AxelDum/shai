@@ -458,6 +458,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn oauth_callback_ignores_requests_with_wrong_state() {
+        let mut server = mockito::Server::new_async().await;
+        let resource = format!("{}/mcp", server.url());
+        let _unauthorized = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", Matcher::Missing)
+            .with_status(401)
+            .with_header("www-authenticate", &challenge(&server))
+            .create_async()
+            .await;
+        let _authorized = server
+            .mock("POST", "/mcp")
+            .match_header("authorization", "Bearer first-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(initialize_response())
+            .create_async()
+            .await;
+        let _resource_metadata = server
+            .mock("GET", "/.well-known/oauth-protected-resource")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(protected_resource_metadata(&server, Some(resource.clone())))
+            .create_async()
+            .await;
+        let _authorization_metadata = server
+            .mock("GET", "/.well-known/oauth-authorization-server")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(authorization_metadata(&server))
+            .create_async()
+            .await;
+        let _registration = server
+            .mock("POST", "/register")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "client_id": "shai-test-client",
+                    "client_name": "Shai MCP Client",
+                    "redirect_uris": ["http://127.0.0.1/callback"]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let authorization_exchange = server
+            .mock("POST", "/token")
+            .match_body(Matcher::UrlEncoded("code".into(), "test-code".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(token_response("first-token", "first-refresh-token"))
+            .create_async()
+            .await;
+
+        let (authorization_sender, mut authorization_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<String>();
+        let mut client = HttpClient::with_credential_store(
+            resource.clone(),
+            None,
+            McpCredentialStore::in_memory(),
+        )
+        .with_browser_opener(move |url| {
+            authorization_sender.send(url.to_string()).unwrap();
+        });
+        let connection = tokio::spawn(async move { client.connect().await });
+        let auth_url = tokio::time::timeout(Duration::from_secs(10), authorization_receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let parameters: std::collections::HashMap<_, _> = reqwest::Url::parse(&auth_url)
+            .unwrap()
+            .query_pairs()
+            .into_owned()
+            .collect();
+        let redirect_uri = &parameters["redirect_uri"];
+
+        for stray in [
+            format!("{redirect_uri}?code=poisoned&state=wrong-state"),
+            format!("{redirect_uri}?error=access_denied&state=wrong-state"),
+            format!("{redirect_uri}?code=poisoned"),
+            format!("{redirect_uri}?state={}", parameters["state"]),
+        ] {
+            let response = reqwest::get(stray).await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        }
+        assert!(!connection.is_finished());
+
+        callback(auth_url, &resource).await;
+        tokio::time::timeout(Duration::from_secs(15), connection)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        authorization_exchange.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_mcp_config_factory() {
         // Test stdio config
         let stdio_config = McpConfig::Stdio {

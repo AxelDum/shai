@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use shai_llm::ToolCallMethod;
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentProviderConfig {
@@ -309,7 +309,15 @@ impl AgentConfig {
 
     /// Save the agent config to file
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let config_path = Self::agent_config_path(&self.name)?;
+        self.save_in(&Self::agents_dir()?)?;
+        // Drop stored credentials of MCP servers that were removed from this agent
+        McpCredentialStore::retain_agent(&self.name, self.tools.mcp.keys().map(String::as_str))
+            .map_err(|error| format!("Failed to clean up MCP credentials: {error}"))?;
+        Ok(())
+    }
+
+    fn save_in(&self, agents_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        let config_path = agents_dir.join(format!("{}.config.json", self.name));
         let content = serde_json::to_string_pretty(self)?;
         let mut options = std::fs::OpenOptions::new();
         options.create(true).write(true).truncate(true);
@@ -325,7 +333,12 @@ impl AgentConfig {
             file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         }
         file.write_all(content.as_bytes())?;
-        Ok(())
+        // `load` prefers the JSON file, so retire the legacy one and any token it still holds
+        match std::fs::remove_file(agents_dir.join(format!("{}.config", self.name))) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// List all available agents
@@ -443,5 +456,56 @@ mod verification_default_tests {
         assert_eq!(ts.first().map(|s| s.as_str()), Some("tsc"));
         assert!(ts.iter().any(|a| a == "--noEmit"));
         assert!(ts.iter().any(|a| a == "{files}"));
+    }
+}
+
+#[cfg(test)]
+mod save_tests {
+    use super::*;
+
+    #[test]
+    fn save_retires_legacy_config_file() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let legacy_path = directory.path().join("legacy-agent.config");
+        std::fs::write(
+            &legacy_path,
+            serde_json::json!({
+                "name": "legacy-agent",
+                "description": "legacy",
+                "llm_provider": {
+                    "provider": "ovhcloud",
+                    "env_vars": {},
+                    "model": "test",
+                    "tool_method": "FunctionCall"
+                },
+                "tools": {
+                    "mcp": {
+                        "remote": {
+                            "config": {
+                                "type": "http",
+                                "url": "https://mcp.example/mcp",
+                                "access_token": "legacy-secret"
+                            }
+                        }
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut config: AgentConfig =
+            serde_json::from_slice(&std::fs::read(&legacy_path).unwrap()).unwrap();
+        if let McpConfig::Http { auth, .. } =
+            &mut config.tools.mcp.get_mut("remote").unwrap().config
+        {
+            *auth = None;
+        }
+
+        config.save_in(directory.path()).unwrap();
+
+        assert!(!legacy_path.exists());
+        let saved =
+            std::fs::read_to_string(directory.path().join("legacy-agent.config.json")).unwrap();
+        assert!(!saved.contains("legacy-secret"));
     }
 }

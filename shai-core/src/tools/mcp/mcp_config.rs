@@ -95,6 +95,47 @@ impl McpCredentialStore {
         }
     }
 
+    /// Delete stored credentials of this agent's MCP servers that are not listed.
+    pub fn retain_agent<'a>(
+        agent_name: &str,
+        mcp_names: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Self::retain_in(&Self::agent_directory(agent_name)?, mcp_names)
+    }
+
+    fn retain_in<'a>(
+        directory: &Path,
+        mcp_names: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let kept: std::collections::HashSet<String> =
+            mcp_names.into_iter().map(Self::hash).collect();
+        let entries = match std::fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        for entry in entries {
+            let path = entry?.path();
+            let Some(hash) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            let is_credential_file =
+                hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit());
+            if is_credential_file && !kept.contains(hash) {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn for_agent_path(
         agent_name: &str,
         mcp_name: &str,
@@ -374,6 +415,29 @@ mod credential_tests {
         store.save(credentials.clone()).await.unwrap();
         store.on_refresh_token_rejected(&credentials).await.unwrap();
         assert!(store.load().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn removed_mcp_credentials_are_deleted() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let path = |name: &str| {
+            directory
+                .path()
+                .join(format!("{}.json", McpCredentialStore::hash(name)))
+        };
+        for name in ["kept", "removed"] {
+            McpCredentialStore::from_path(path(name))
+                .save(credentials("access", "refresh"))
+                .await
+                .unwrap();
+        }
+        std::fs::write(directory.path().join("unrelated.json"), "{}").unwrap();
+
+        McpCredentialStore::retain_in(directory.path(), ["kept"]).unwrap();
+
+        assert!(path("kept").exists());
+        assert!(!path("removed").exists());
+        assert!(directory.path().join("unrelated.json").exists());
     }
 
     #[test]

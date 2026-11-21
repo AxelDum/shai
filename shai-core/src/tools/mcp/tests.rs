@@ -604,6 +604,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_bearer_token_is_migrated_into_credential_store() {
+        let mut server = mockito::Server::new_async().await;
+        let connection = server
+            .mock("POST", "/mcp")
+            .expect(4)
+            .match_header("authorization", "Bearer legacy-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(initialize_response())
+            .create_async()
+            .await;
+        let discovery = server
+            .mock("GET", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        let directory = tempfile::TempDir::new().unwrap();
+        let store = McpCredentialStore::from_path(directory.path().join("oauth.json"));
+        let legacy_token = crate::tools::mcp::OAuthToken {
+            access_token: "legacy-token".to_string(),
+            expires_at: None,
+        };
+        let mut client = HttpClient::with_credential_store(
+            format!("{}/mcp", server.url()),
+            Some(legacy_token),
+            store.clone(),
+        );
+        client.connect().await.unwrap();
+
+        let stored = store
+            .load()
+            .await
+            .unwrap()
+            .expect("legacy token was not migrated");
+        assert_eq!(
+            serde_json::to_value(stored.token_response.unwrap()).unwrap()["access_token"],
+            "legacy-token"
+        );
+
+        // The migrated token is used once the legacy field is gone from the agent config
+        let mut reconnected =
+            HttpClient::with_credential_store(format!("{}/mcp", server.url()), None, store)
+                .with_browser_opener(|_| panic!("migrated token should not start a browser flow"));
+        tokio::time::timeout(Duration::from_secs(15), reconnected.connect())
+            .await
+            .unwrap()
+            .unwrap();
+        connection.assert_async().await;
+        discovery.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_mcp_http_integration() {
         // Skip test if no MCP server is running on localhost:8000
         if !is_mcp_server_available().await {
